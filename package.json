@@ -1,0 +1,16 @@
+{
+  "name": "forex-scalping-bot",
+  "version": "1.0.0",
+  "description": "AI-powered forex scalping bot using Claude + OANDA",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "auto": "node index.js --auto-execute",
+    "gbp": "node index.js --pair GBP_USD",
+    "gbp-auto": "node index.js --pair GBP_USD --auto-execute"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0"
+  }
+}
