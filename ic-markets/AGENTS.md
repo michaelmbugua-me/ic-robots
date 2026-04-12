@@ -9,8 +9,8 @@ AI-powered forex scalping bot connecting **local Ollama LLMs** to the **IC Marke
 The main loop (`index.js`) runs a polling cycle every 60s:
 1. **Market data** → `icmarkets.js` fetches multi-timeframe candles (M5 entry + M15 trend)
 2. **Indicators** → `indicators.js` computes EMA(8/21), RSI(7), ATR(14), ADX(14), VWAP, Bollinger Bands, MACD — all from scratch, no external library
-3. **Hard filters** → Short-circuit checks (ADX floor, RSI extremes, EMA alignment, falling knife, HTF trend) eliminate invalid setups before any AI call
-4. **AI gatekeeper** → `ai.js` queries Ollama (or Anthropic) for structured JSON signal (`BUY`/`SELL`/`WAIT` + SL/TP/confidence)
+3. **Hard filters** → Short-circuit checks (ADX floor, RSI extremes, EMA alignment, falling knife, HTF trend) eliminate invalid setups
+4. **Signal generation** → Default mode (`OFF`) uses pure indicators with zero latency. Optional `HYBRID`/`ALWAYS` modes route through `ai.js` for Ollama/Anthropic confirmation
 5. **Execution** → `icmarkets.js` places market orders via Protobuf, manages trailing stop, and reconciles state on restart
 
 Data flow: `config.js` (all tuning knobs) → `index.js` (orchestrator) → `icmarkets.js` (broker API) + `ai.js` (LLM) + `news.js` (Finnhub sentiment)

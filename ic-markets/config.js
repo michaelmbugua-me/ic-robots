@@ -16,10 +16,10 @@ export const config = {
   aiProvider: process.env.AI_PROVIDER || "ollama",
 
   // ─── AI Mode ───────────────────────────────────────────────────────────
+  // "OFF"    → Pure technical indicators, zero latency (Recommended for scalping)
+  // "HYBRID" → Technical rules trigger, AI confirms (adds 2-15s latency)
   // "ALWAYS" → AI sees every tick and decides (Most overhead)
-  // "HYBRID" → Technical rules trigger, AI confirms (Recommended)
-  // "OFF"    → Pure technical rules (Mock logic), no AI overhead
-  aiMode: process.env.AI_MODE || "HYBRID",
+  aiMode: process.env.AI_MODE || "OFF",
 
   // ─── Anthropic ─────────────────────────────────────────────────────────
   // anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",

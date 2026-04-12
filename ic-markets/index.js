@@ -58,10 +58,18 @@ async function run() {
   await icmarkets.connect();
   process.stdout.write(" ✓\nAuthenticating...");
   await icmarkets.authenticate();
-  process.stdout.write(" ✓\nConnecting to AI...");
-  await ai.healthCheck();
-  process.stdout.write(" ✓\nConnecting to Finnhub News (WS)...");
-  
+
+  // Only connect to AI if we're using it
+  if (config.aiMode !== "OFF") {
+    process.stdout.write(" ✓\nConnecting to AI...");
+    await ai.healthCheck();
+    process.stdout.write(" ✓\n");
+  } else {
+    process.stdout.write(" ✓\n  AI Mode: OFF (pure indicators — zero latency)\n");
+  }
+
+  process.stdout.write("Connecting to Finnhub News (WS)...");
+
   if (config.strategy.newsApiKey) {
     global.finnhubWsClient = new FinnhubWSClient(config.strategy.newsApiKey);
     global.finnhubWsClient.connect();
@@ -259,11 +267,24 @@ async function tick() {
 
   // Logic decision based on config.aiMode
   if (config.aiMode === "OFF") {
-    console.log(` ✓ | Pure Technical Mode (Mock)... ${technicalAction}`);
+    console.log(` ✓ | Pure Technical Mode... ${technicalAction}`);
+
+    // Build a complete signal with ATR-based SL/TP (no AI needed)
+    const { atrMultiplierSL, atrMultiplierTP } = config.strategy;
+    const atrVal = indicators.atr || (pipSize * 15);
+    const slDist = atrMultiplierSL * atrVal;
+    const tpDist = atrMultiplierTP * atrVal;
+    const px = indicators.currentPrice;
+
     const signal = {
       action: technicalAction,
       confidence: 100,
-      reasoning: "Pure technical trigger (AI OFF)"
+      sentiment: technicalAction === "BUY" ? "Bullish" : technicalAction === "SELL" ? "Bearish" : "Neutral",
+      sentimentScore: 100,
+      entry: px,
+      stopLoss:   technicalAction === "BUY" ? px - slDist : px + slDist,
+      takeProfit: technicalAction === "BUY" ? px + tpDist : px - tpDist,
+      reasoning: "Pure indicator signal (AI OFF)"
     };
     processSignal(signal, indicators, timestamp, htfIndicators, "0.0", possibleActions);
     return;
