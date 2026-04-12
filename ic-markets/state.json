@@ -1,0 +1,11 @@
+{
+  "activeTrades": [
+    {
+      "id": "604900513",
+      "entryPrice": null,
+      "direction": "BUY",
+      "isBreakeven": true
+    }
+  ],
+  "lastUpdated": "2026-04-11T15:58:44.465Z"
+}

@@ -1,0 +1,27 @@
+{
+  "name": "icmarkets-scalping-bot",
+  "version": "1.0.0",
+  "description": "AI forex scalping bot — Local Ollama AI + IC Markets cTrader Open API",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "auth": "node auth.js",
+    "symbols": "node get-symbols.js",
+    "start": "node index.js",
+    "auto": "node index.js --auto-execute",
+    "download": "node download-history.js",
+    "backtest": "node backtest.js",
+    "backtest-mock": "node backtest.js --mock",
+    "test-news": "node debug-news.js",
+    "gbp": "node index.js --pair GBP_USD",
+    "gbp-auto": "node index.js --pair GBP_USD --auto-execute",
+    "jpn": "node index.js --pair USD_JPY",
+    "jpn-auto": "node index.js --pair USD_JPY --auto-execute"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "long": "^5.3.2",
+    "protobufjs": "^8.0.1",
+    "ws": "^8.18.0"
+  }
+}
