@@ -52,6 +52,26 @@ export function calculateIndicators(candles) {
     : volumes.reduce((a, b) => a + b, 0) / volumes.length;
   const volumeRatio = volAvg > 0 ? volumes[volumes.length - 1] / volAvg : 1;
 
+  // Bollinger Bands — current and previous (for expansion detection)
+  const currentBB = bbands(closes, 20, 2);
+  const prevBB    = bbands(closes.slice(0, -1), 20, 2);
+
+  // BB Width = (upper - lower) — absolute width of bands
+  const bbWidth     = currentBB.mid ? (currentBB.upper - currentBB.lower) : 0;
+  const prevBbWidth = prevBB.mid    ? (prevBB.upper - prevBB.lower) : 0;
+  // Bands are expanding when current width > previous width (squeeze release)
+  const bbWidthExpanding = bbWidth > prevBbWidth;
+
+  // BB Squeeze detection — bands were compressed relative to ATR before this candle
+  // Normal BB width ≈ 3-4x ATR. Width < 4x ATR = squeeze (low volatility compression)
+  const atrVal = atr(highs, lows, closes, 14);
+  const bbSqueezeRatio = (atrVal > 0 && prevBbWidth > 0) ? prevBbWidth / atrVal : 99;
+  // Squeeze breakout = bands were relatively narrow AND are now expanding
+  const bbSqueezeBreakout = bbSqueezeRatio < 4.0 && bbWidthExpanding;
+
+  // Candle body ratio = body / ATR — measures conviction of the candle
+  const candleBodyATR = atrVal > 0 ? body / atrVal : 0;
+
   return {
     currentPrice: closes[closes.length - 1],
     // Dynamic EMA System based on config
@@ -67,11 +87,19 @@ export function calculateIndicators(candles) {
     // Short RSI for fast momentum
     rsi:          rsi(closes, 7),
     // Volatility-based stop/profit
-    atr:          atr(highs, lows, closes, 14),
+    atr:          atrVal,
     // Rolling VWAP (20 periods)
     vwap:         vwap(barVwaps, volumes, 20),
     // Bollinger Bands (20 periods, 2 stdDev)
-    bbands:       bbands(closes, 20, 2),
+    bbands:       currentBB,
+    // BB Width expansion — true when bands are widening (squeeze breakout)
+    bbWidth,
+    bbWidthExpanding,
+    // BB Squeeze metrics — ratio < 3.5 means bands were compressed before breakout
+    bbSqueezeRatio,
+    bbSqueezeBreakout,
+    // Candle body as fraction of ATR (conviction measure, e.g. 0.5 = half ATR body)
+    candleBodyATR,
     // MACD (12, 26, 9) — with previous hist for crossover detection
     macd:         macdResult,
     prevMacdHist,

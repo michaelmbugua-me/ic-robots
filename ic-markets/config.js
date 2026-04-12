@@ -74,8 +74,17 @@ export const config = {
   },
 
   // ─── Trading ───────────────────────────────────────────────────────────
-  // Best forex pairs for scalping: EUR_USD, GBP_USD, USD_JPY
+  // Dual-strategy approach:
+  //   EUR_USD → Pullback (buy oversold dips in uptrend) — proven profitable
+  //   GBP_USD → Momentum (buy breakouts with trend) — GBP's volatility suits breakouts
   defaultInstrument:   "EUR_USD",
+
+  // Pairs to scan when no --pair flag is provided (multi-pair mode)
+  // Each pair is evaluated independently every tick cycle
+  // NOTE: GBP_USD tested unprofitable on M5 in both momentum (PF 0.72) and pullback (PF 0.38).
+  // EUR_USD pullback is the only strategy with a proven edge (PF 2.0, 72% WR).
+  // Add pairs back only after positive backtest results.
+  tradingPairs: (process.env.TRADING_PAIRS || "EUR_USD").split(",").map(s => s.trim()),
 
   // Candle timeframe: M1, M5, M15, M30, H1
   // M5 is the sweet spot for scalping — fast enough, not too noisy
@@ -117,15 +126,18 @@ export const config = {
   // ─── Profit Protection ──────────────────────────────────────────────────
   // Move Stop Loss to Entry (Breakeven) after profit reaches X * ATR
   useBreakeven: true,
-  breakevenTriggerATR: 2.0, // Activate trailing at 2x ATR profit
+  breakevenTriggerATR: 1.5, // Activate trailing at 1.5x ATR profit (was 2.0 — trigger sooner)
 
   // Trailing stop: once breakeven triggers, trail SL at this ATR distance from price
   useTrailingStop: true,
-  trailingStopATR: 1.5, // Trail 1.5x ATR behind current price
+  trailingStopATR: 1.0, // Trail 1.0x ATR behind price (was 1.5 — lock in 0.5x ATR minimum)
 
   // ─── Multi-Trade Management ────────────────────────────────────────────
   // Max concurrent trades allowed for the same pair
   maxConcurrentTrades: 1,
+
+  // Max total trades across ALL pairs combined (prevents over-exposure)
+  maxTotalTrades: 3,
 
   // Total account risk (%) for all combined trades (e.g. 3 * 1% = 3%)
   maxTotalRiskPercent: 3.0,
@@ -144,10 +156,10 @@ export const config = {
 
   // ─── Strategy Settings (Finetuning) ────────────────────────────────────
   strategy: {
-    // ATR Multipliers for targets (Higher = wider, better for spread)
-    // 2.5x SL / 5.0x TP is a 1:2 RR ratio — wider SL avoids M5 noise
+    // ATR Multipliers for targets
+    // 2.5x SL / 4.5x TP is a 1:1.8 RR ratio — trailing stop locks in profits so let TP run
     atrMultiplierSL: 2.5,
-    atrMultiplierTP: 5.0,
+    atrMultiplierTP: 4.5,
 
     // RSI Thresholds (Strict — only trade genuine oversold/overbought)
     rsiThresholdLow:  30,
@@ -158,11 +170,21 @@ export const config = {
     emaSlow: 21,
 
     // ADX minimum — filters out choppy/ranging markets (no directional conviction)
-    minAdx: 18,
+    // 22 is optimal for EUR_USD (keeps 53% of candles, best PF 2.0)
+    minAdx: 22,
 
     // Volume confirmation — require at least this multiple of avg volume for entries
     // Set to 0 to disable. 1.0 = average, 1.2 = 20% above average
-    minVolumeRatio: 0.8,
+    minVolumeRatio: 1.0,
+
+    // Require MACD line above zero for BUY, below zero for SELL
+    // WARNING: May conflict with pullback strategy (MACD weakens during pullbacks)
+    // Set false for pullback entries, true for pure momentum entries
+    requireMacdBias: false,
+
+    // Minimum confirmation signals required to enter (out of 3: rejection candle, MACD momentum, volume)
+    // 1 = standard (at least one confirmation), 2 = strict, 3 = very strict
+    minConfirmations: 1,
 
     // ─── News & Sentiment Filters ──────────────────────────────────────────
     // Block trading during high-impact news events (USD/EUR for EUR_USD)
@@ -178,6 +200,57 @@ export const config = {
     // "finnhub"      → Real automated API (Requires API Key from finnhub.io)
     newsProvider: process.env.NEWS_PROVIDER || "finnhub",
     newsApiKey:   process.env.NEWS_API_KEY   || "",
+  },
+
+  // ─── Pair-Specific Overrides ────────────────────────────────────────────
+  // Override any strategy.* key per pair.
+  // strategyMode: "pullback" (default) = buy oversold, sell overbought (EUR_USD)
+  //               "momentum" = buy breakouts above BB, sell breakdowns below BB (GBP_USD)
+  pairOverrides: {
+    // ⚠️  GBP_USD: TESTED UNPROFITABLE on M5 in both modes.
+    //     - Momentum: PF 0.72, 40.5% WR, -$14.53 (false breakouts, tight SL clipped by noise)
+    //     - Pullback: PF 0.38, 33.3% WR, -$44.36 (wider spreads + whippy action on M5)
+    //     Consider M15/H1 timeframe if re-enabling. Keep for manual --pair GBP_USD testing.
+    "GBP_USD": {
+      strategyMode: "pullback",
+      minAdx: 20,
+      atrMultiplierSL: 2.5,
+      atrMultiplierTP: 4.5,
+      minVolumeRatio: 1.0,
+      breakevenTriggerATR: 1.5,
+      trailingStopATR: 1.0,
+    },
+    "AUD_USD": {
+      // AUD/USD: Low volatility, clean mean-reversion, tight IC Markets spreads (~0.1 pip)
+      // Download history and backtest before adding to tradingPairs:
+      //   npm run download -- --pair AUD_USD --days 270
+      //   npm run backtest-mock -- --pair AUD_USD
+      strategyMode: "pullback",
+      minAdx: 18,
+      atrMultiplierSL: 2.5,
+      atrMultiplierTP: 4.0,
+      minVolumeRatio: 1.0,
+      breakevenTriggerATR: 1.5,
+      trailingStopATR: 1.0,
+    },
+    "EUR_GBP": {
+      // EUR/GBP: Very range-bound, ideal for pullback/mean-reversion
+      // Download history and backtest before adding to tradingPairs:
+      //   npm run download -- --pair EUR_GBP --days 270
+      //   npm run backtest-mock -- --pair EUR_GBP
+      strategyMode: "pullback",
+      minAdx: 15,
+      atrMultiplierSL: 2.0,
+      atrMultiplierTP: 3.5,
+      minVolumeRatio: 0.8,
+      breakevenTriggerATR: 1.3,
+      trailingStopATR: 0.8,
+    },
+    "USD_JPY": {
+      minAdx: 22,
+      atrMultiplierSL: 3.0,
+      atrMultiplierTP: 4.0,
+    },
   },
 
   // ─── Backtest Specific ──────────────────────────────────────────────────
@@ -196,6 +269,6 @@ export const config = {
     commissionPerSideUSD: 3.00,
 
     // Initial virtual balance
-    initialBalance: 200,
+    initialBalance: 500,
   },
 };
