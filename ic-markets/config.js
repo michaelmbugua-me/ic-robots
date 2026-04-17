@@ -94,9 +94,29 @@ export const config = {
   // Should roughly match your granularity: M1=60, M5=300
   pollIntervalSeconds: 60,
 
-  // ─── Risk Management ───────────────────────────────────────────────────
+  // ─── Session Hours (UTC) ────────────────────────────────────────────────
+  // London Open through NY Afternoon: 08:00–18:00 UTC (11:00–21:00 EAT)
+  // Covers London, London/NY Overlap, and most of New York session.
+  // Avoids low-liquidity Asian session and dead NY close.
+  sessionStartUTC: 8,
+  sessionEndUTC:   18,
+
+  // ─── KES Risk Management (Phase 1: Global Risk Guardrails) ─────────────
+  // 50,000 KES account targeting 500–1,000 KES daily profit
+  // Daily drawdown hard cap: 1,000 KES (2%)
+  risk: {
+    accountCapitalKES:    parseFloat(process.env.ACCOUNT_CAPITAL_KES) || 50_000,
+    dailyStopLossKES:     parseFloat(process.env.DAILY_STOP_LOSS_KES) || 1_000,
+    dailyProfitTargetKES: parseFloat(process.env.DAILY_PROFIT_TARGET_KES) || 1_000,
+    maxLeverage:          parseInt(process.env.MAX_LEVERAGE) || 100,
+    maxOpenTrades:        1,     // Only 1 active trade at any time
+    minRiskReward:        1.5,   // Minimum R:R ratio of 1:1.5
+    usdKesRate:           parseFloat(process.env.USD_KES_RATE) || 129.0, // Approximate USD/KES rate
+  },
+
+  // ─── Risk Management (legacy, still used for unit calc fallback) ───────
   // % of account balance to risk per trade — never go above 2%
-  riskPercentPerTrade: 1.0,
+  riskPercentPerTrade: 2.0,
 
   // Max allowed position size (in units) to prevent huge lot sizes if SL is tight
   // 10,000 = 0.1 lots. 100,000 = 1.0 lot.
@@ -111,8 +131,8 @@ export const config = {
   minConfidenceToExecute: 80,
 
   // ─── Safety & Circuit Breakers ──────────────────────────────────────────
-  // Max daily loss (%) to stop trading for the day
-  maxDailyLossPercent: 5.0,
+  // Max daily loss (%) to stop trading for the day — KES-based cap is primary
+  maxDailyLossPercent: 2.0,
 
   // Wait time (minutes) after a STOP LOSS before taking another trade
   lossCooldownMinutes: 15,
@@ -132,12 +152,20 @@ export const config = {
   useTrailingStop: true,
   trailingStopATR: 1.0, // Trail 1.0x ATR behind price (was 1.5 — lock in 0.5x ATR minimum)
 
+  // ─── Slippage Protection ───────────────────────────────────────────────
+  // Max slippage in pips for cTrader NewOrderReq
+  maxSlippagePips: 2,
+
+  // ─── Connection Health ─────────────────────────────────────────────────
+  // If connection lost for > this many seconds, trigger emergency alert
+  connectionTimeoutSeconds: 10,
+
   // ─── Multi-Trade Management ────────────────────────────────────────────
   // Max concurrent trades allowed for the same pair
   maxConcurrentTrades: 1,
 
-  // Max total trades across ALL pairs combined (prevents over-exposure)
-  maxTotalTrades: 3,
+  // Max total trades across ALL pairs combined (1 = single trade globally)
+  maxTotalTrades: 1,
 
   // Total account risk (%) for all combined trades (e.g. 3 * 1% = 3%)
   maxTotalRiskPercent: 3.0,
@@ -186,20 +214,22 @@ export const config = {
     // 1 = standard (at least one confirmation), 2 = strict, 3 = very strict
     minConfirmations: 1,
 
-    // ─── News & Sentiment Filters ──────────────────────────────────────────
-    // Block trading during high-impact news events (USD/EUR for EUR_USD)
-    newsBlocker: true,
-    newsBlockMinutesBefore: 30, // Block trades X minutes before news
-    newsBlockMinutesAfter:  30, // Block trades X minutes after news
-    
+    // ─── Phase 2: Market Environment Filters ──────────────────────────────
+    // EMA 200 Trend Filter on H1 chart
+    ema200Period: 200,
+
+    // Volatility Filter: ATR(14) must be above 20-day average ATR
+    atrAveragePeriod: 20,   // Days to average ATR for volatility filter
+
+    // ─── Phase 3: Price Action Triggers ───────────────────────────────────
+    // Engulfing / Pin Bar pattern detection for entry confirmation
+    // within 15-minute Support/Resistance zone
+    usePriceActionTrigger: true,
+    srLookbackPeriods: 50,   // Periods to look back for S/R zone detection
+
     // AI Sentiment Check: Minimum AI confidence required for trading
     // (A confidence level above 80% usually indicates strong sentiment alignment)
     minSentimentConfidence: 75, 
-
-    // ─── News API ────────────────────────────────────────────────────────
-    // "finnhub"      → Real automated API (Requires API Key from finnhub.io)
-    newsProvider: process.env.NEWS_PROVIDER || "finnhub",
-    newsApiKey:   process.env.NEWS_API_KEY   || "",
   },
 
   // ─── Pair-Specific Overrides ────────────────────────────────────────────

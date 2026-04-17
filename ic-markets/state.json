@@ -1,11 +1,9 @@
 {
-  "activeTrades": [
-    {
-      "id": "604900513",
-      "entryPrice": null,
-      "direction": "BUY",
-      "isBreakeven": true
+  "pairStates": {
+    "EUR_USD": {
+      "lastSignal": null,
+      "activeTrades": []
     }
-  ],
-  "lastUpdated": "2026-04-11T15:58:44.465Z"
+  },
+  "lastUpdated": "2026-04-13T09:16:47.885Z"
 }

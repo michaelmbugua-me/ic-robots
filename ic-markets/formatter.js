@@ -45,14 +45,28 @@ export function formatSignalAlert(pair, signal, indicators, timestamp, latency =
   }
 
   out += `\n  ${c("gray", "Sentiment:")} ${sentiment || "Neutral"} (${sentimentScore || "0"}%)  `;
-  out += `${c("gray", "EMA8")} ${indicators.ema8.toFixed(5)}  `;
-  out += `${c("gray", "EMA21")} ${indicators.ema21.toFixed(5)}\n`;
-  
-  out += `  ${c("gray", "VWAP")} ${indicators.vwap.toFixed(5)}  `;
-  out += `${c("gray", "RSI7")} ${indicators.rsi.toFixed(1)}  `;
-  out += `${c("gray", "ATR")} ${indicators.atr.toFixed(5)}\n`;
 
-  out += `  ${c("gray", "BB ")} ${indicators.bbands.lower?.toFixed(5)} / ${indicators.bbands.upper?.toFixed(5)}\n`;
+  // Use dynamic EMA keys from config (default ema8/ema21)
+  const emaFastKey = `ema${indicators.ema8 !== undefined ? 8 : 8}`;
+  const emaSlowKey = `ema${indicators.ema21 !== undefined ? 21 : 21}`;
+  const emaFastVal = indicators[emaFastKey] || indicators.ema8;
+  const emaSlowVal = indicators[emaSlowKey] || indicators.ema21;
+
+  if (emaFastVal) out += `${c("gray", "EMA8")} ${emaFastVal.toFixed(5)}  `;
+  if (emaSlowVal) out += `${c("gray", "EMA21")} ${emaSlowVal.toFixed(5)}\n`;
+
+  if (indicators.ema200) out += `  ${c("gray", "EMA200")} ${indicators.ema200.toFixed(5)}  `;
+  if (indicators.vwap) out += `${c("gray", "VWAP")} ${indicators.vwap.toFixed(5)}  `;
+  out += `${c("gray", "RSI7")} ${indicators.rsi?.toFixed(1) ?? "—"}  `;
+  out += `${c("gray", "ATR")} ${indicators.atr?.toFixed(5) ?? "—"}`;
+  if (indicators.atrAverage) out += ` ${c("gray", "(avg")} ${indicators.atrAverage.toFixed(5)}${c("gray", ")")}`;
+  out += `\n`;
+
+  out += `  ${c("gray", "BB ")} ${indicators.bbands.lower?.toFixed(5)} / ${indicators.bbands.upper?.toFixed(5)}`;
+  if (indicators.hasPriceAction) out += `  ${c("yellow", "⚡PA")}`;
+  if (indicators.nearSupport) out += `  ${c("green", "📍S/R:Support")}`;
+  if (indicators.nearResistance) out += `  ${c("red", "📍S/R:Resistance")}`;
+  out += `\n`;
 
   out += `\n  ${c("white", "📊 " + reasoning)}\n`;
 

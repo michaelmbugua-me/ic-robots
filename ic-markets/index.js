@@ -4,8 +4,11 @@
  * Forex Scalping Bot — IC Markets Edition
  * Pure Technical Indicators + IC Markets cTrader Open API
  *
+ * Risk Engine: 50,000 KES account, 1,000 KES daily drawdown cap,
+ * 500–1,000 KES daily profit target, max 1 trade at a time.
+ *
  * Usage:
- *   node index.js                        → monitor all tradingPairs (default: EUR_USD, GBP_USD)
+ *   node index.js                        → monitor all tradingPairs (default: EUR_USD)
  *   node index.js --auto-execute         → auto-execute trades
  *   node index.js --pair GBP_USD         → single pair only
  *   node index.js --pair EUR_USD,GBP_USD,USD_JPY --auto-execute
@@ -16,8 +19,8 @@ import { ICMarketsClient } from "./icmarkets.js";
 import { calculateIndicators } from "./indicators.js";
 import { formatSignalAlert, formatTradeResult } from "./formatter.js";
 import { createAIClient, getSystemPrompt, getUserPrompt } from "./ai.js";
-import { isNearHighImpactNews, getMarketNewsContext, FinnhubWSClient } from "./news.js";
 import { config }          from "./config.js";
+import { RiskManager }     from "./risk-manager.js";
 
 const args         = process.argv.slice(2);
 const AUTO_EXECUTE = args.includes("--auto-execute");
@@ -32,6 +35,7 @@ const PAIRS = pairArg
 const STATE_FILE = "state.json";
 const icmarkets  = new ICMarketsClient();
 const ai         = createAIClient();
+const riskManager = new RiskManager();
 
 // ─── Per-pair state ──────────────────────────────────────────────────────────
 const pairState = new Map();  // pair → { lastSignal, activeTrades }
@@ -53,13 +57,19 @@ let lastLossTime    = 0;
 
 async function run() {
   console.log(`\n${"═".repeat(60)}`);
-  console.log(`  🤖  FOREX SCALPING BOT — IC Markets`);
+  console.log(`  🤖  FOREX SCALPING BOT — IC Markets (KES Risk Engine)`);
   console.log(`${"═".repeat(60)}`);
   console.log(`  Pairs      : ${PAIRS.join(", ")}`);
   console.log(`  Timeframe  : ${config.granularity}`);
   console.log(`  Mode       : ${AUTO_EXECUTE ? "🔴 AUTO-EXECUTE" : "🟡 MONITOR ONLY"}`);
   console.log(`  Interval   : every ${config.pollIntervalSeconds}s`);
   console.log(`  Account    : ${config.ctraderEnv.toUpperCase()}`);
+  console.log(`  Capital    : ${config.risk.accountCapitalKES.toLocaleString()} KES`);
+  console.log(`  Daily Loss : max ${config.risk.dailyStopLossKES.toLocaleString()} KES (${((config.risk.dailyStopLossKES / config.risk.accountCapitalKES) * 100).toFixed(1)}%)`);
+  console.log(`  Daily TP   : ${config.risk.dailyProfitTargetKES.toLocaleString()} KES`);
+  console.log(`  Max Trades : ${config.risk.maxOpenTrades} concurrent`);
+  console.log(`  Min R:R    : 1:${config.risk.minRiskReward}`);
+  console.log(`  Session    : ${config.sessionStartUTC}:00–${config.sessionEndUTC}:00 UTC (London/NY Overlap)`);
   console.log(`${"═".repeat(60)}\n`);
 
   if (AUTO_EXECUTE) {
@@ -69,6 +79,12 @@ async function run() {
   // Connect and authenticate
   process.stdout.write("Connecting to IC Markets...");
   await icmarkets.connect();
+
+  // Set up connection health alert callback
+  icmarkets.onConnectionLost = (msg) => {
+    logActivity("emergency", { message: msg });
+  };
+
   process.stdout.write(" ✓\nAuthenticating...");
   await icmarkets.authenticate();
 
@@ -81,25 +97,24 @@ async function run() {
     process.stdout.write(" ✓\n  AI Mode: OFF (pure indicators — zero latency)\n");
   }
 
-  process.stdout.write("Connecting to Finnhub News (WS)...");
-
-  if (config.strategy.newsApiKey) {
-    global.finnhubWsClient = new FinnhubWSClient(config.strategy.newsApiKey);
-    global.finnhubWsClient.connect();
-    process.stdout.write(" ✓\n\n");
-  } else {
-    process.stdout.write(" ⚠️  (Skipped - no API key)\n\n");
-  }
-
   // Sync state and account
   loadState();
   for (const pair of PAIRS) {
     await reconcileAccount(pair);
   }
 
+  // Sync RiskManager open trade count from state
+  const totalActive = getAllActiveTrades().length;
+  riskManager.syncOpenTradeCount(totalActive);
+
   const account = await icmarkets.getAccount();
   startingBalance = parseFloat(account.balance);
   startingDay     = new Date().getUTCDate();
+
+  // Show RiskManager status
+  const riskStatus = riskManager.getStatus();
+  console.log(`  📊 RiskManager: Trading=${riskStatus.tradingEnabled ? "ON" : "OFF"} | Daily PnL: ${riskStatus.dailyRealizedPnLKES.toFixed(2)} KES | Open: ${riskStatus.openTradeCount}`);
+  console.log();
 
   // Main polling loop
   while (true) {
@@ -126,14 +141,21 @@ async function tick() {
     console.log(`[${timestamp}] 🌅 New day — starting balance reset to $${startingBalance.toFixed(2)}`);
   }
 
-  // Skip low-liquidity periods (outside London/NY sessions)
+  // Skip low-liquidity periods (outside London/NY overlap: 15:00–19:00 EAT)
   const session = currentSession();
   if (session === "off") {
-    console.log(`[${timestamp}] ⏸  Off-hours — waiting...`);
+    console.log(`[${timestamp}] ⏸  Off-hours (UTC ${new Date().getUTCHours()}:00) — trading 08:00–18:00 UTC`);
     return;
   }
 
-  // 0. Daily Circuit Breaker (account-level)
+  // ─── Phase 1: RiskManager gate (KES-based) ──────────────────────────────
+  const riskCheck = riskManager.canTrade();
+  if (!riskCheck.allowed) {
+    console.log(`[${timestamp}] 🛑 RiskManager: ${riskCheck.reason}`);
+    return;
+  }
+
+  // 0. Daily Circuit Breaker (account-level, legacy %-based backup)
   const account = await icmarkets.getAccount();
   const currentBalance = parseFloat(account.balance);
   const dailyPnL = ((currentBalance - startingBalance) / startingBalance) * 100;
@@ -173,16 +195,14 @@ async function tick() {
 async function tickPair(pair, timestamp) {
   const state = getState(pair);
 
-  // 1. News Blocker Check
-  if (config.strategy.newsBlocker) {
-    const isNewsWindow = await isNearHighImpactNews(pair, config.strategy.newsBlockMinutesBefore, config.strategy.newsBlockMinutesAfter);
-    if (isNewsWindow) {
-      console.log(`[${timestamp}] ⏸  ${pair} HIGH-IMPACT NEWS WINDOW — skipping.`);
-      return;
-    }
+  // Re-check RiskManager before each pair (a previous pair's trade might have hit limits)
+  const riskCheck = riskManager.canTrade();
+  if (!riskCheck.allowed) {
+    console.log(`[${timestamp}] 🛑 ${pair} RiskManager: ${riskCheck.reason}`);
+    return;
   }
 
-  // 2. Spread Check
+  // 1. Spread Check
   try {
     const spread = await icmarkets.getSpread(pair);
     if (spread > config.maxSpreadPips) {
@@ -195,13 +215,14 @@ async function tickPair(pair, timestamp) {
 
   process.stdout.write(`[${timestamp}] ${pair} `);
 
-  // Multi-Timeframe Fetch
+  // Multi-Timeframe Fetch: base (M5) + HTF (M15) + H1 for EMA200
   const baseGranularity = config.granularity;
   const htfGranularity  = getHTFGranularity(baseGranularity);
 
-  const [baseCandles, htfCandles] = await Promise.all([
+  const [baseCandles, htfCandles, h1Candles] = await Promise.all([
     icmarkets.getCandles(pair, baseGranularity, 200),
-    icmarkets.getCandles(pair, htfGranularity, 50).catch(() => null)
+    icmarkets.getCandles(pair, htfGranularity, 50).catch(() => null),
+    icmarkets.getCandles(pair, "H1", 220).catch(() => null)  // Need 200+ for EMA(200)
   ]);
 
   if (!baseCandles || baseCandles.length < 50) {
@@ -209,8 +230,25 @@ async function tickPair(pair, timestamp) {
     return;
   }
 
-  const indicators = calculateIndicators(baseCandles);
+  // ─── Phase 4: Data Validation ──────────────────────────────────────────
+  // Validate tick data before calculating indicators
+  const validCandles = baseCandles.filter(c => {
+    const o = parseFloat(c.mid.o);
+    const h = parseFloat(c.mid.h);
+    const l = parseFloat(c.mid.l);
+    const cc = parseFloat(c.mid.c);
+    return isFinite(o) && isFinite(h) && isFinite(l) && isFinite(cc) &&
+           o > 0 && h > 0 && l > 0 && cc > 0 && h >= l;
+  });
+
+  if (validCandles.length < 50) {
+    console.log("⚠️  Not enough valid data after validation.");
+    return;
+  }
+
+  const indicators = calculateIndicators(validCandles);
   const htfIndicators = htfCandles ? calculateIndicators(htfCandles) : null;
+  const h1Indicators  = h1Candles && h1Candles.length >= 200 ? calculateIndicators(h1Candles) : null;
 
   const isJPY = pair.includes("JPY");
   const pipSize = isJPY ? 0.01 : 0.0001;
@@ -232,6 +270,24 @@ async function tickPair(pair, timestamp) {
   // 0b. ADX Trend Strength Floor
   if (indicators.adx !== null && indicators.adx < pairCfg.minAdx) {
     console.log(`Skipping (Low ADX: ${indicators.adx.toFixed(1)})`);
+    return;
+  }
+
+  // ─── Phase 2: EMA(200) Trend Filter on H1 ──────────────────────────────
+  // If Price > EMA_200 → only LONG. If Price < EMA_200 → only SHORT.
+  const ema200 = h1Indicators?.ema200 ?? indicators.ema200;
+  if (ema200 !== null) {
+    if (indicators.currentPrice > ema200) {
+      possibleActions = possibleActions.filter(a => a !== "SELL");
+    } else if (indicators.currentPrice < ema200) {
+      possibleActions = possibleActions.filter(a => a !== "BUY");
+    }
+  }
+
+  // ─── Phase 2: Volatility Filter ──────────────────────────────────────────
+  // If ATR(14) < 20-day average ATR → choppy/flat market, skip
+  if (!indicators.isVolatilityOk) {
+    console.log(`Skipping (Low volatility: ATR ${indicators.atr?.toFixed(5)} < avg ${indicators.atrAverage?.toFixed(5)})`);
     return;
   }
 
@@ -271,7 +327,7 @@ async function tickPair(pair, timestamp) {
 
   // 6. Total trades across all pairs check
   const totalActiveTrades = getAllActiveTrades().length;
-  if (totalActiveTrades >= (config.maxTotalTrades || 3)) {
+  if (totalActiveTrades >= (config.maxTotalTrades || 1)) {
     console.log(`Skipping (total trades ${totalActiveTrades} >= max ${config.maxTotalTrades})`);
     return;
   }
@@ -300,20 +356,16 @@ async function tickPair(pair, timestamp) {
     const isBearishBreakout = indicators.currentPrice < indicators.bbands.lower
       && rsiVal < sellRsiMax && rsiVal > 15;
 
-    // Quality gate: BB must be expanding from a squeeze (compressed bands → breakout)
     if (pairCfg.requireBbExpansion && !indicators.bbSqueezeBreakout) {
       technicalAction = "WAIT";
     }
-    // Quality gate: volume must be above threshold (genuine breakout)
     else if (pairCfg.requireVolume && indicators.volumeRatio < minVolRatio) {
       technicalAction = "WAIT";
     }
-    // Quality gate: breakout candle must show conviction (decent body)
     else if (pairCfg.minCandleBodyATR && indicators.candleBodyATR < pairCfg.minCandleBodyATR) {
       technicalAction = "WAIT";
     }
     else {
-      // MACD alignment (not requiring histogram acceleration — sustained trends flatten)
       const macdBullish = indicators.macd.macd > 0 && macdHist > 0;
       const macdBearish = indicators.macd.macd < 0 && macdHist < 0;
 
@@ -346,6 +398,23 @@ async function tickPair(pair, timestamp) {
 
     technicalAction = (isOversold  && hasBuyConfirmation  && possibleActions.includes("BUY"))  ? "BUY" :
                       (isOverbought && hasSellConfirmation && possibleActions.includes("SELL")) ? "SELL" : "WAIT";
+  }
+
+  // ─── Phase 3: Price Action Trigger Gate ──────────────────────────────────
+  // Require a price action confirmation (engulfing/pin bar) within S/R zone
+  if (technicalAction !== "WAIT" && config.strategy.usePriceActionTrigger) {
+    const isBuy = technicalAction === "BUY";
+    const hasPAConfirm = isBuy ? indicators.hasBullishPriceAction : indicators.hasBearishPriceAction;
+    const nearSR = isBuy ? indicators.nearSupport : indicators.nearResistance;
+
+    if (!hasPAConfirm) {
+      console.log(`Skipping (no price action confirmation for ${technicalAction})`);
+      technicalAction = "WAIT";
+    }
+    // S/R zone check is optional but preferred — log if missing but don't block
+    if (technicalAction !== "WAIT" && !nearSR) {
+      console.log(`  ℹ️  ${pair} not near S/R zone — proceeding with price action alone`);
+    }
   }
 
   // Build signal
@@ -385,11 +454,7 @@ async function tickPair(pair, timestamp) {
 
   process.stdout.write(`Asking AI...`);
   const startTime = Date.now();
-  let newsContext = "";
-  if (config.strategy.newsProvider === "finnhub" && config.strategy.newsApiKey) {
-    newsContext = await getMarketNewsContext(5);
-  }
-  const signal = await getAISignal(pair, baseCandles, indicators, htfIndicators, possibleActions, newsContext);
+  const signal = await getAISignal(pair, baseCandles, indicators, htfIndicators, possibleActions);
   const latency = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(` ${signal.action} (${latency}s)`);
 
@@ -412,6 +477,8 @@ async function manageActiveTrades(pair, indicators) {
       ? (currentPX - trade.entryPrice) / pipSize
       : (trade.entryPrice - currentPX) / pipSize;
 
+    // ─── Phase 3: Break-Even Logic ──────────────────────────────────────
+    // If Current_Profit >= 1 × Initial_Risk → move SL to Entry_Price
     const triggerPips = (atr * config.breakevenTriggerATR) / pipSize;
 
     if (profitPips >= triggerPips) {
@@ -503,12 +570,36 @@ async function processSignal(pair, signal, indicators, timestamp, htfIndicators 
         signal.takeProfit = parseFloat((signal.entry - idealTPDist).toFixed(5));
       }
     }
+
+    // ─── Phase 3: Enforce minimum R:R of 1:1.5 ──────────────────────────
+    if (!riskManager.validateRiskReward(signal)) {
+      // Try to adjust TP to meet minimum R:R
+      const risk = Math.abs(signal.entry - signal.stopLoss);
+      const minTP = risk * config.risk.minRiskReward;
+      if (signal.action === "BUY") {
+        signal.takeProfit = parseFloat((signal.entry + minTP).toFixed(5));
+      } else {
+        signal.takeProfit = parseFloat((signal.entry - minTP).toFixed(5));
+      }
+      // Revalidate
+      if (!riskManager.validateRiskReward(signal)) {
+        signal.action = "WAIT";
+        signal.reasoning = "Rejected: Cannot meet minimum R:R of 1:1.5";
+      }
+    }
   }
 
   console.log(formatSignalAlert(pair, signal, indicators, timestamp, latency));
   logActivity("signal", { pair, ...signal, indicators });
 
   if (signal.action === "WAIT") return;
+
+  // ─── RiskManager final gate before execution ──────────────────────────
+  const riskCheck = riskManager.canTrade();
+  if (!riskCheck.allowed) {
+    console.log(`  🛑 RiskManager blocked: ${riskCheck.reason}`);
+    return;
+  }
 
   const isFlip = state.lastSignal && state.lastSignal !== signal.action;
   state.lastSignal = signal.action;
@@ -544,9 +635,9 @@ async function processSignal(pair, signal, indicators, timestamp, htfIndicators 
 
 // ─── AI Signal ───────────────────────────────────────────────────────────────
 
-async function getAISignal(pair, candles, indicators, htfIndicators = null, allowedActions = ["BUY", "SELL", "WAIT"], newsHeadlines = "") {
+async function getAISignal(pair, candles, indicators, htfIndicators = null, allowedActions = ["BUY", "SELL", "WAIT"]) {
   const systemPrompt = getSystemPrompt(pair);
-  const userPrompt = getUserPrompt(pair, config.granularity, indicators, candles.slice(-30), htfIndicators, allowedActions, newsHeadlines);
+  const userPrompt = getUserPrompt(pair, config.granularity, indicators, candles.slice(-30), htfIndicators, allowedActions);
   return await ai.getSignal(systemPrompt, userPrompt);
 }
 
@@ -554,6 +645,14 @@ async function getAISignal(pair, candles, indicators, htfIndicators = null, allo
 
 async function executeTrade(pair, signal, indicators) {
   const state = getState(pair);
+
+  // ─── Final RiskManager permission check (MUST always ask before order) ──
+  const riskCheck = riskManager.canTrade();
+  if (!riskCheck.allowed) {
+    console.log(`  🛑 RiskManager BLOCKED execution: ${riskCheck.reason}\n`);
+    return;
+  }
+
   console.log(`\n  🚀  Executing ${signal.action} on ${pair}...`);
 
   try {
@@ -566,11 +665,13 @@ async function executeTrade(pair, signal, indicators) {
         try {
           await icmarkets.closeTrade(t.id);
           state.activeTrades = state.activeTrades.filter(at => at.id !== t.id);
+          riskManager.syncOpenTradeCount(getAllActiveTrades().length);
           console.log(`     ✓ Closed ${t.id}`);
         } catch (err) {
           const errMsg = err.message.toLowerCase();
           if (errMsg.includes("not found") || errMsg.includes("already closed") || errMsg.includes("invalid position id")) {
             state.activeTrades = state.activeTrades.filter(at => at.id !== t.id);
+            riskManager.syncOpenTradeCount(getAllActiveTrades().length);
           } else {
             console.error(`  ⚠️  Aborting ${pair} trade — could not close ${t.id}.`);
             saveState();
@@ -590,7 +691,7 @@ async function executeTrade(pair, signal, indicators) {
     if (!units) return;
 
     const account    = await icmarkets.getAccount();
-    const balance    = parseFloat(account.balance) / 100;
+    const balance    = parseFloat(account.balance);
     const finalUnits = signal.action === "SELL" ? -units : units;
 
     const trade = await icmarkets.createOrder({
@@ -610,6 +711,12 @@ async function executeTrade(pair, signal, indicators) {
     });
     saveState();
 
+    // Notify RiskManager
+    riskManager.onTradeOpened(
+      String(trade.id), pair, signal.action,
+      parseFloat(trade.price), signal.stopLoss, signal.takeProfit, units
+    );
+
     console.log(formatTradeResult(trade, signal, balance, units));
     logActivity("trade", { pair, action: signal.action, units, price: trade.price, stopLoss: signal.stopLoss, takeProfit: signal.takeProfit });
 
@@ -619,34 +726,29 @@ async function executeTrade(pair, signal, indicators) {
 }
 
 async function calculateUnits(pair, signal, indicators) {
-  const account    = await icmarkets.getAccount();
-  const balance    = parseFloat(account.balance) / 100;
-  const riskAmount = balance * (config.riskPercentPerTrade / 100);
-  const slDistance = Math.abs(signal.entry - signal.stopLoss);
-
   const isJPY = pair.includes("JPY");
   const pipSize = isJPY ? 0.01 : 0.0001;
-  const slPips  = slDistance / pipSize;
+  const slDistance = Math.abs(signal.entry - signal.stopLoss);
+  const slPips = slDistance / pipSize;
   const rate = indicators ? indicators.currentPrice : signal.entry;
 
-  let pipValue = 10;
-  if (pair.startsWith("USD_") || pair.startsWith("USD/")) {
-    pipValue = (pipSize / rate) * 100_000;
-  } else if (!pair.endsWith("_USD") && !pair.endsWith("/USD")) {
-    pipValue = (pipSize / rate) * 100_000;
+  // ─── Phase 1: Use RiskManager's KES-based lot size calculator ──────────
+  let units = riskManager.calculateVolume(pair, slPips, rate);
+
+  if (units <= 0) {
+    console.log(`  ⚠️  ${pair} RiskManager calculated 0 units — skipping.\n`);
+    return 0;
   }
 
-  const lots = riskAmount / (slPips * pipValue);
-  let units     = Math.floor(lots * 100_000);
-
-  if (units > config.maxPositionSizeUnits) units = config.maxPositionSizeUnits;
-
+  // Clamp to broker symbol constraints
   const symbol = await icmarkets.getSymbol(pair);
   if (symbol.stepVolume > 0) units = Math.floor(units / symbol.stepVolume) * symbol.stepVolume;
   if (units < symbol.minVolume) {
     console.log(`  ⚠️  ${pair} position too small (${units} < min ${symbol.minVolume}) — skipping.\n`);
     return 0;
   }
+
+  console.log(`  📊 Volume: ${units} units (${(units / 100_000).toFixed(2)} lots) | SL: ${slPips.toFixed(1)} pips | Rate: ${rate.toFixed(5)}`);
   return units;
 }
 
@@ -661,14 +763,21 @@ function getAllActiveTrades() {
 }
 
 function currentSession() {
-  const h = utcHour();
-  if (h >= 8  && h < 18) return h >= 13 && h < 16 ? "London+NY overlap" :
-                                h >= 8  && h < 13  ? "London" : "New York";
-  return "off";
-}
+  const now = new Date();
+  const h = now.getUTCHours();
+  const day = now.getUTCDay(); // 0 = Sunday, 6 = Saturday
 
-function utcHour() {
-  return new Date().getUTCHours();
+  // Weekend check: block Saturday and Sunday
+  if (day === 0 || day === 6) return "off";
+
+  // London + NY sessions: 08:00–18:00 UTC (11:00–21:00 EAT)
+  if (h >= config.sessionStartUTC && h < config.sessionEndUTC) {
+    if (h >= 12 && h < 16) return "London+NY overlap";
+    if (h >= 8  && h < 12) return "London";
+    if (h >= 16 && h < 18) return "New York";
+    return "Market Open";
+  }
+  return "off";
 }
 
 function getHTFGranularity(base) {
@@ -742,6 +851,9 @@ async function reconcileAccount(pair) {
     } else {
       console.log(" ✓");
     }
+
+    // Sync RiskManager
+    riskManager.syncOpenTradeCount(getAllActiveTrades().length);
   } catch (err) {
     console.error(` ❌ Reconciliation failed: ${err.message}`);
   }

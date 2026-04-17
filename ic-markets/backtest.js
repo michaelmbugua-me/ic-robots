@@ -141,8 +141,11 @@ async function main() {
     });
 
     // --- LIVE REPLICATION: Session Filtering ---
-    const sessionH = new Date(timestamp).getUTCHours();
-    const isTradingSession = sessionH >= 8 && sessionH < 18;
+    const dateObj = new Date(timestamp);
+    const sessionH = dateObj.getUTCHours();
+    const sessionDay = dateObj.getUTCDay();
+    const isWeekend = sessionDay === 0 || sessionDay === 6;
+    const isTradingSession = !isWeekend && sessionH >= config.sessionStartUTC && sessionH < config.sessionEndUTC;
 
     if (!isTradingSession) {
       if (lastSignal && lastSignal !== "WAIT") lastSignal = "WAIT";

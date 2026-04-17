@@ -22,9 +22,8 @@ Priority Rules:
 1. STRUCTURE: Must be Bullish (EMA${emaFast} > EMA${emaSlow}) for BUY, Bearish for SELL.
 2. VALUE: Only BUY in 'Discount' (Price < VWAP or Lower BB). Only SELL in 'Premium' (Price > VWAP or Upper BB).
 3. MOMENTUM: Reject 'Falling Knives'. If momentum is strong against you, WAIT for rejection wicks.
-4. NEWS: If news context is negative or highly uncertain, stay on the sidelines.
-5. QUALITY: You are a professional trader. "WAIT" is your most frequent and safest action.
-6. DATA: Analyze the last 30 candles for trend health and rejection patterns.
+4. QUALITY: You are a professional trader. "WAIT" is your most frequent and safest action.
+5. DATA: Analyze the last 30 candles for trend health and rejection patterns.
 Format:
 {
   "action": "BUY"|"SELL"|"WAIT",
@@ -38,7 +37,7 @@ Format:
 }`;
 }
 
-export function getUserPrompt(symbol, granularity, indicators, recentBars, htfIndicators = null, allowedActions = ["BUY", "SELL", "WAIT"], newsHeadlines = "") {
+export function getUserPrompt(symbol, granularity, indicators, recentBars, htfIndicators = null, allowedActions = ["BUY", "SELL", "WAIT"]) {
   // Pass more candles for better pattern recognition (up to 30)
   const bars = recentBars.map(b => [b.time.split('T')[1].slice(0,5), b.mid.o, b.mid.h, b.mid.l, b.mid.c]);
   const px = indicators.currentPrice;
@@ -58,7 +57,6 @@ export function getUserPrompt(symbol, granularity, indicators, recentBars, htfIn
   const macdHist = indicators.macd.hist !== null ? indicators.macd.hist.toFixed(5) : "N/A";
   const macdSignal = indicators.macd.signal !== null ? indicators.macd.signal.toFixed(5) : "N/A";
 
-  const newsContext = newsHeadlines ? `--- FUNDAMENTAL CONTEXT ---\n${newsHeadlines}\n---------------------------` : "";
   const momPips = (indicators.momentum / (symbol.includes("JPY") ? 0.01 : 0.0001)).toFixed(1);
   const slopePips = (indicators.emaSlope / (symbol.includes("JPY") ? 0.01 : 0.0001)).toFixed(2);
   const lWickPips = (indicators.lowerWick / (symbol.includes("JPY") ? 0.01 : 0.0001)).toFixed(1);
@@ -68,7 +66,6 @@ export function getUserPrompt(symbol, granularity, indicators, recentBars, htfIn
   return `ALLOWED: ${allowedActions.join(", ")}
 SYM: ${symbol} | TF: ${granularity} | SESS: ${getForexSession()}
 ${htfContext}
-${newsContext}
 IND: EMA${emaFast}:${indicators[`ema${emaFast}`].toFixed(5)}, EMA${emaSlow}:${indicators[`ema${emaSlow}`].toFixed(5)}, RSI:${indicators.rsi.toFixed(1)}, ATR:${indicators.atr.toFixed(5)}, VWAP:${indicators.vwap.toFixed(5)}, PX:${px.toFixed(5)}
 SLOPE: ${slopePips} pips, MOMENTUM: ${momPips} pips
 BB: ${indicators.bbands.upper?.toFixed(5)}/${indicators.bbands.lower?.toFixed(5)}

@@ -9,6 +9,7 @@ export function calculateIndicators(candles) {
   const closes = candles.map((c) => parseFloat(c.mid.c));
   const highs  = candles.map((c) => parseFloat(c.mid.h));
   const lows   = candles.map((c) => parseFloat(c.mid.l));
+  const opens  = candles.map((c) => parseFloat(c.mid.o));
   const volumes = candles.map((c) => Number(c.volume));
   
   const { emaFast, emaSlow } = config.strategy || { emaFast: 8, emaSlow: 21 };
@@ -18,6 +19,9 @@ export function calculateIndicators(candles) {
 
   const emaF = ema(closes, emaFast);
   const emaS = ema(closes, emaSlow);
+  
+  // EMA 200 — Phase 2 Trend Filter
+  const ema200Value = ema(closes, config.strategy?.ema200Period || 200);
   
   // Calculate EMA Slope (Change over last 3 candles)
   const prevEmaF = ema(closes.slice(0, -1), emaFast);
@@ -37,6 +41,33 @@ export function calculateIndicators(candles) {
   const minBody = body || 0.000001; // prevent divide-by-zero
   const isBullishRejection = lowerWick > minBody * 1.5 && lowerWick > upperWick * 1.5;
   const isBearishRejection = upperWick > minBody * 1.5 && upperWick > lowerWick * 1.5;
+
+  // ─── Phase 3: Price Action Patterns ──────────────────────────────────────
+  // Bullish Engulfing: previous candle bearish, current candle bullish and fully engulfs previous
+  const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
+  let isBullishEngulfing = false;
+  let isBearishEngulfing = false;
+  let isPinBar = isBullishRejection || isBearishRejection;
+
+  if (prevCandle) {
+    const po = parseFloat(prevCandle.mid.o);
+    const pc = parseFloat(prevCandle.mid.c);
+    const prevBearish = pc < po;
+    const prevBullish = pc > po;
+    const currBullish = c > o;
+    const currBearish = c < o;
+
+    isBullishEngulfing = prevBearish && currBullish && o <= pc && c >= po;
+    isBearishEngulfing = prevBullish && currBearish && o >= pc && c <= po;
+  }
+
+  const hasPriceAction = isBullishEngulfing || isBearishEngulfing || isPinBar;
+  const hasBullishPriceAction = isBullishEngulfing || isBullishRejection;
+  const hasBearishPriceAction = isBearishEngulfing || isBearishRejection;
+
+  // ─── Support/Resistance Zone Detection ──────────────────────────────────
+  const srLookback = config.strategy?.srLookbackPeriods || 50;
+  const srZone = detectSRZone(highs, lows, closes, srLookback);
 
   // MACD with previous histogram for crossover detection
   const macdResult = macd(closes, 12, 26, 9);
@@ -63,14 +94,18 @@ export function calculateIndicators(candles) {
   const bbWidthExpanding = bbWidth > prevBbWidth;
 
   // BB Squeeze detection — bands were compressed relative to ATR before this candle
-  // Normal BB width ≈ 3-4x ATR. Width < 4x ATR = squeeze (low volatility compression)
   const atrVal = atr(highs, lows, closes, 14);
   const bbSqueezeRatio = (atrVal > 0 && prevBbWidth > 0) ? prevBbWidth / atrVal : 99;
-  // Squeeze breakout = bands were relatively narrow AND are now expanding
   const bbSqueezeBreakout = bbSqueezeRatio < 4.0 && bbWidthExpanding;
 
   // Candle body ratio = body / ATR — measures conviction of the candle
   const candleBodyATR = atrVal > 0 ? body / atrVal : 0;
+
+  // ─── ATR Average (Volatility Filter — Phase 2) ──────────────────────────
+  // Compute rolling ATR values over the last N periods and average them
+  const atrAvgPeriod = config.strategy?.atrAveragePeriod || 20;
+  const atrAverage = computeAtrAverage(highs, lows, closes, 14, atrAvgPeriod);
+  const isVolatilityOk = atrVal !== null && atrAverage !== null && atrVal >= atrAverage;
 
   return {
     currentPrice: closes[closes.length - 1],
@@ -78,16 +113,32 @@ export function calculateIndicators(candles) {
     [`ema${emaFast}`]:  emaF,
     [`ema${emaSlow}`]:  emaS,
     emaSlope,
+    // EMA 200 — Phase 2 Trend Filter
+    ema200: ema200Value,
     // Rejection indicators
     lowerWick,
     upperWick,
     body,
     isBullishRejection,
     isBearishRejection,
+    // Price Action Patterns (Phase 3)
+    isBullishEngulfing,
+    isBearishEngulfing,
+    isPinBar,
+    hasPriceAction,
+    hasBullishPriceAction,
+    hasBearishPriceAction,
+    // Support/Resistance zones
+    srZone,
+    nearSupport: srZone.nearSupport,
+    nearResistance: srZone.nearResistance,
     // Short RSI for fast momentum
     rsi:          rsi(closes, 7),
     // Volatility-based stop/profit
     atr:          atrVal,
+    // ATR Average & Volatility Filter (Phase 2)
+    atrAverage,
+    isVolatilityOk,
     // Rolling VWAP (20 periods)
     vwap:         vwap(barVwaps, volumes, 20),
     // Bollinger Bands (20 periods, 2 stdDev)
@@ -95,21 +146,80 @@ export function calculateIndicators(candles) {
     // BB Width expansion — true when bands are widening (squeeze breakout)
     bbWidth,
     bbWidthExpanding,
-    // BB Squeeze metrics — ratio < 3.5 means bands were compressed before breakout
+    // BB Squeeze metrics
     bbSqueezeRatio,
     bbSqueezeBreakout,
-    // Candle body as fraction of ATR (conviction measure, e.g. 0.5 = half ATR body)
+    // Candle body as fraction of ATR
     candleBodyATR,
     // MACD (12, 26, 9) — with previous hist for crossover detection
     macd:         macdResult,
     prevMacdHist,
     // Trend strength — ADX(14)
     adx:          adxValue,
-    // Volume ratio (current / 20-period avg). >1.2 = above average activity
+    // Volume ratio (current / 20-period avg)
     volumeRatio,
     // Momentum: (Last Close - Previous Close)
     momentum:     closes[closes.length - 1] - closes[closes.length - 2]
   };
+}
+
+// ─── Support/Resistance Zone Detection ──────────────────────────────────────
+
+function detectSRZone(highs, lows, closes, lookback = 50) {
+  const recentHighs = highs.slice(-lookback);
+  const recentLows  = lows.slice(-lookback);
+  const currentPrice = closes[closes.length - 1];
+  const atrVal = atr(highs, lows, closes, 14) || 0.001;
+
+  // Find swing highs and swing lows (local extremes)
+  const resistanceLevels = [];
+  const supportLevels = [];
+
+  for (let i = 2; i < recentHighs.length - 2; i++) {
+    // Swing high: higher than 2 bars on each side
+    if (recentHighs[i] > recentHighs[i-1] && recentHighs[i] > recentHighs[i-2] &&
+        recentHighs[i] > recentHighs[i+1] && recentHighs[i] > recentHighs[i+2]) {
+      resistanceLevels.push(recentHighs[i]);
+    }
+    // Swing low: lower than 2 bars on each side
+    if (recentLows[i] < recentLows[i-1] && recentLows[i] < recentLows[i-2] &&
+        recentLows[i] < recentLows[i+1] && recentLows[i] < recentLows[i+2]) {
+      supportLevels.push(recentLows[i]);
+    }
+  }
+
+  // Check if current price is near (within 1.5× ATR) any S/R level
+  const proximityThreshold = 1.5 * atrVal;
+  const nearSupport    = supportLevels.some(s => Math.abs(currentPrice - s) < proximityThreshold && currentPrice >= s);
+  const nearResistance = resistanceLevels.some(r => Math.abs(currentPrice - r) < proximityThreshold && currentPrice <= r);
+
+  return {
+    supportLevels,
+    resistanceLevels,
+    nearSupport,
+    nearResistance,
+    closestSupport:    supportLevels.length > 0 ? supportLevels.reduce((a, b) => Math.abs(b - currentPrice) < Math.abs(a - currentPrice) ? b : a) : null,
+    closestResistance: resistanceLevels.length > 0 ? resistanceLevels.reduce((a, b) => Math.abs(b - currentPrice) < Math.abs(a - currentPrice) ? b : a) : null,
+  };
+}
+
+// ─── ATR Average (for volatility filter) ──────────────────────────────────────
+
+function computeAtrAverage(highs, lows, closes, atrPeriod, avgPeriod) {
+  // We need enough data to compute ATR for each of the last avgPeriod bars
+  if (highs.length < atrPeriod + avgPeriod + 1) return null;
+
+  const atrValues = [];
+  for (let i = 0; i < avgPeriod; i++) {
+    const endIdx = highs.length - i;
+    const startIdx = Math.max(0, endIdx - (atrPeriod + 20)); // enough data for ATR
+    if (endIdx - startIdx < atrPeriod + 1) continue;
+    const val = atr(highs.slice(startIdx, endIdx), lows.slice(startIdx, endIdx), closes.slice(startIdx, endIdx), atrPeriod);
+    if (val !== null) atrValues.push(val);
+  }
+
+  if (atrValues.length === 0) return null;
+  return atrValues.reduce((a, b) => a + b, 0) / atrValues.length;
 }
 
 // ─── MACD ────────────────────────────────────────────────────────────────────

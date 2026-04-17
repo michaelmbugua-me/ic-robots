@@ -16,9 +16,15 @@
  */
 
 import WebSocket from "ws";
+import fs from "fs";
 import protobuf from "protobufjs";
 import Long from "long";
 import { config } from "./config.js";
+
+function logConnectionAlert(message) {
+  const entry = JSON.stringify({ timestamp: new Date().toISOString(), type: "connection_alert", message }) + "\n";
+  try { fs.appendFileSync("activity.log", entry); } catch {}
+}
 
 // ─── Payload type constants (Protobuf version) ──────────────────────────────
 const PT = {
@@ -106,6 +112,10 @@ export class ICMarketsClient {
     this.root            = null;
     this.proto           = null;        // Cache for loaded proto definitions
     this.symbols         = new Map();   // Cache for symbol details
+    // Connection health monitoring (Phase 4)
+    this.lastMessageTime = Date.now();
+    this.healthCheckTimer = null;
+    this.onConnectionLost = null;       // Callback for emergency alert
   }
 
   // ─── Connection ────────────────────────────────────────────────────────────
@@ -132,11 +142,16 @@ export class ICMarketsClient {
 
       this.ws.on("open", () => {
         this.connected = true;
+        this.lastMessageTime = Date.now();
         this._startHeartbeat();
+        this._startHealthMonitor();
         resolve();
       });
 
-      this.ws.on("message", (raw) => this._onMessage(raw));
+      this.ws.on("message", (raw) => {
+        this.lastMessageTime = Date.now();
+        this._onMessage(raw);
+      });
 
       this.ws.on("error", (err) => {
         if (!this.connected) reject(err);
@@ -147,6 +162,7 @@ export class ICMarketsClient {
         const wasConnected = this.connected;
         this.connected = false;
         clearInterval(this.heartbeatTimer);
+        clearInterval(this.healthCheckTimer);
         if (wasConnected && !this.reconnecting) this._scheduleReconnect();
       });
     });
@@ -335,6 +351,15 @@ export class ICMarketsClient {
       tradeSide:    isBuy ? 1 : 2, // BUY : SELL
       volume: Long.fromValue(volume),
     };
+
+    // Slippage protection (Phase 3): max 2 pips deviation from expected price
+    const maxSlippagePips = config.maxSlippagePips || 2;
+    const isJPY = instrument.includes("JPY");
+    const pipSize = isJPY ? 0.01 : 0.0001;
+    const slippagePoints = Math.round(maxSlippagePips * pipSize * 100000);
+    if (slippagePoints > 0) {
+      payload.slippage = Long.fromValue(slippagePoints);
+    }
 
     // For MARKET orders, cTrader requires relative SL/TP
     // Specified in 1/100000 of unit of a price
@@ -653,12 +678,26 @@ export class ICMarketsClient {
   _startHeartbeat() {
     this.heartbeatTimer = setInterval(() => {
       if (this.connected) {
-        // Heartbeat is special — it has no inner payload in ProtoMessage on some versions,
-        // but cTrader usually uses a specific HEARTBEAT payloadType (51).
-        // For PT 51, the payload is often empty or ProtoHeartbeatEvent.
         this._send(PT.HEARTBEAT, {}).catch(() => {});
       }
     }, 20_000);
+  }
+
+  // ─── Connection Health Monitor (Phase 4) ─────────────────────────────────
+
+  _startHealthMonitor() {
+    const timeoutMs = (config.connectionTimeoutSeconds || 10) * 1000;
+    this.healthCheckTimer = setInterval(() => {
+      const silenceMs = Date.now() - this.lastMessageTime;
+      if (silenceMs > timeoutMs && this.connected) {
+        const msg = `🚨 EMERGENCY: No data from cTrader for ${(silenceMs / 1000).toFixed(0)}s (limit: ${config.connectionTimeoutSeconds}s)`;
+        console.error(msg);
+        logConnectionAlert(msg);
+        if (this.onConnectionLost) {
+          this.onConnectionLost(msg);
+        }
+      }
+    }, 5_000); // Check every 5s
   }
 }
 

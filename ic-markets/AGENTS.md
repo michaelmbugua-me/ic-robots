@@ -2,24 +2,27 @@
 
 ## Project Overview
 
-AI-powered forex scalping bot connecting **local Ollama LLMs** to the **IC Markets cTrader Open API** via Protobuf-over-WebSocket. Pure Node.js (ESM), zero framework, no test suite.
+AI-powered forex scalping bot connecting **local Ollama LLMs** to the **IC Markets cTrader Open API** via Protobuf-over-WebSocket. Pure Node.js (ESM), zero framework, no test suite. **KES-denominated risk engine** manages a 50,000 KES account with strict daily drawdown limits.
 
 ## Architecture
 
 The main loop (`index.js`) runs a polling cycle every 60s:
-1. **Market data** → `icmarkets.js` fetches multi-timeframe candles (M5 entry + M15 trend)
-2. **Indicators** → `indicators.js` computes EMA(8/21), RSI(7), ATR(14), ADX(14), VWAP, Bollinger Bands (with squeeze detection), MACD — all from scratch, no external library
-3. **Hard filters** → Short-circuit checks (ADX floor, RSI extremes, EMA alignment, falling knife, HTF trend) eliminate invalid setups
-4. **Signal generation** → Default mode (`OFF`) uses pure indicators with zero latency. Optional `HYBRID`/`ALWAYS` modes route through `ai.js` for Ollama/Anthropic confirmation
-5. **Execution** → `icmarkets.js` places market orders via Protobuf, manages trailing stop, and reconciles state on restart
+1. **RiskManager gate** → `risk-manager.js` checks daily KES P&L limits, open trade count, and trading permission before ANY order
+2. **Market data** → `icmarkets.js` fetches multi-timeframe candles (M5 entry + M15 trend + H1 for EMA200)
+3. **Data validation** → All tick data validated for NaN/zero/invalid values before indicator calculation
+4. **Indicators** → `indicators.js` computes EMA(8/21/200), RSI(7), ATR(14), ADX(14), VWAP, Bollinger Bands (with squeeze detection), MACD, engulfing patterns, pin bars, S/R zones — all from scratch, no external library
+5. **Phase 2 filters** → EMA(200) trend filter (H1), ATR volatility filter (ATR > 20-day avg), session hours (London/NY overlap only)
+6. **Hard filters** → Short-circuit checks (ADX floor, RSI extremes, EMA alignment, falling knife, HTF trend)
+7. **Phase 3 triggers** → Price Action confirmation (Bullish Engulfing / Pin Bar) within S/R zones required for entry
+8. **Signal generation** → Default mode (`OFF`) uses pure indicators. Optional `HYBRID`/`ALWAYS` modes route through `ai.js`
+9. **RiskManager execution gate** → `riskManager.canTrade()` called AGAIN before `ProtoOANewOrderReq`
+10. **Execution** → `icmarkets.js` places market orders with 2-pip slippage protection, RiskManager-calculated KES lot sizing
 
-**Dual-strategy system** — each pair runs one of two strategy modes (set via `config.pairOverrides`):
-- `pullback` (default, EUR_USD): buys oversold dips near lower BB in uptrend, sells overbought near upper BB in downtrend
-- `momentum` (GBP_USD): buys BB squeeze breakouts (bands expanding from compression) with RSI/MACD/volume/candle-body confirmation, sells breakdowns below lower BB
-
-**Per-pair state** — `pairState` Map tracks `{ lastSignal, activeTrades }` per pair. Account-level checks (daily circuit breaker, cooldown) are shared across all pairs.
-
-Data flow: `config.js` (all tuning knobs) → `index.js` (orchestrator, scans all `tradingPairs` each tick) → `icmarkets.js` (broker API) + `ai.js` (LLM, optional) + `news.js` (Finnhub sentiment)
+**Risk Engine (4 Phases):**
+- **Phase 1**: Global guardrails — 1,000 KES daily stop-loss, 1,000 KES profit target, max 1 trade, dynamic KES-based lot sizing, 1:100 max leverage
+- **Phase 2**: Market environment — EMA(200) on H1 trend filter, 15:00–19:00 EAT session, ATR volatility filter
+- **Phase 3**: Trade execution — Price action triggers (engulfing/pin bar) at S/R zones, 1:1.5 min R:R, breakeven at 1×risk, 2-pip max slippage
+- **Phase 4**: Error handling — 10s connection heartbeat monitor, tick data validation, emergency logging
 
 ## Key Commands
 
@@ -31,7 +34,6 @@ npm run start         # Monitor-only mode (no trades placed)
 npm run auto          # Auto-execute EUR/USD trades
 npm run backtest      # Backtest with real AI (supports multi-pair: --pair EUR_USD,GBP_USD)
 npm run backtest-mock # Backtest with deterministic mock signal logic (no AI needed)
-npm run test-news     # Debug Finnhub connectivity and news filtering
 ```
 
 Backtest also accepts `--provider ollama|anthropic` and `--model MODEL_NAME` to override AI settings from the CLI.
@@ -41,7 +43,7 @@ Pair-specific shortcuts: `npm run gbp`, `npm run gbp-auto`, `npm run jpn`, `npm 
 ## Conventions & Patterns
 
 - **ESM only** — all files use `import/export`, `"type": "module"` in package.json
-- **No test framework** — validation is done via backtesting (`backtest.js`) and `debug-news.js`
+- **No test framework** — validation is done via backtesting (`backtest.js`)
 - **Candle format** — standardized as `{ time, complete, volume, mid: { o, h, l, c } }` (OANDA-compatible shape) even though data comes from cTrader Protobuf
 - **Pip math** — JPY pairs use `pipSize = 0.01`, all others use `0.0001`. Always check `PAIR.includes("JPY")`
 - **cTrader prices** — raw integers divided by `100000` (5 decimal places). Volume is `units * 100` internally
@@ -58,19 +60,18 @@ Pair-specific shortcuts: `npm run gbp`, `npm run gbp-auto`, `npm run jpn`, `npm 
 
 - **cTrader Open API** (`icmarkets.js`): Protobuf binary over WSS port 5035. Uses `.proto` files in project root. Auth is 2-step: app auth → account auth. Heartbeat every 20s required. Note: `get-symbols.js` uses the older JSON protocol on port 5036
 - **Ollama** (`ai.js`): HTTP POST to `localhost:11434/api/chat` with `format: "json"`. Response parsed with aggressive fallback: strip `<think>` tags → try JSON.parse → regex extract `{...}` → default to WAIT
-- **Finnhub** (`news.js`): Dual-channel — REST for economic calendar + WebSocket for real-time headlines. News buffer stored on `global.finnhubWsClient`. Economic calendar may require premium tier
 - **Backtest** (`backtest-multi.js`): Simulates spread, slippage, and IC Markets commissions ($3/side per $100k). Supports multi-pair testing by syncing candles from multiple `history_PAIR.json` files. `--mock` flag bypasses AI entirely with deterministic RSI+BB+MACD logic.
 
 ## Files to Understand First
 
 | File | Why |
 |---|---|
-| `config.js` | Every tunable parameter lives here — risk %, ATR multipliers, AI mode, session hours, ADX/volume thresholds |
-| `index.js` | The `tick()` function is the complete trading pipeline in ~250 lines |
-| `icmarkets.js` | Protobuf encode/decode and the request/response matching pattern (`pendingRequests` Map) |
+| `config.js` | Every tunable parameter — KES risk params, ATR multipliers, AI mode, session hours, ADX/volume thresholds |
+| `risk-manager.js` | **NEW** — RiskManager class: daily KES P&L tracking, lot size calculator, R:R validation, trade lifecycle |
+| `index.js` | The `tick()` function is the complete trading pipeline with 4-phase risk engine |
+| `icmarkets.js` | Protobuf encode/decode, slippage protection, connection health monitoring |
 | `ai.js` | System/user prompt construction and the `parseSignalResponse()` fallback chain |
 | `backtest-multi.js` | Multi-pair backtester with shared balance and commission simulation |
-| `indicators.js` | All indicators from scratch: EMA, RSI, ATR, ADX, MACD, BBands, VWAP, rejection candle detection |
-| `news.js` | Finnhub REST + WebSocket integration, economic calendar cache, high-impact news blocker |
+| `indicators.js` | All indicators: EMA(8/21/200), RSI, ATR, ADX, MACD, BBands, VWAP, engulfing patterns, S/R zones |
 | `formatter.js` | Terminal output formatting for signal alerts and trade results |
 

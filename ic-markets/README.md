@@ -141,7 +141,7 @@ node get-symbols.js
 - Copy the output block into `config.js` → `ctraderSymbolIds`
 
 ### Step 9 — Configure News Filter (Required for Automation)
-The bot skips trading during high-impact economic news (e.g., CPI, NFP) and provides real-time market sentiment to the AI via Finnhub.
+The bot provides real-time market sentiment to the AI via Finnhub market headlines.
 
 1. Register for a free account at [finnhub.io](https://finnhub.io/).
 2. Copy your **API Key**.
@@ -150,7 +150,7 @@ The bot skips trading during high-impact economic news (e.g., CPI, NFP) and prov
    NEWS_API_KEY=your-api-key
    NEWS_PROVIDER=finnhub
    ```
-4. The bot now automatically connects to Finnhub via **WebSockets** for real-time headlines and REST for the economic calendar.
+4. The bot now automatically connects to Finnhub via **WebSockets** for real-time headlines. (Note: Economic calendar check is disabled as it's a premium feature).
 
 ### Step 10 — Run the bot
 ```bash
