@@ -162,7 +162,7 @@ export const config = {
 
   // ─── Multi-Trade Management ────────────────────────────────────────────
   // Max concurrent trades allowed for the same pair
-  maxConcurrentTrades: 1,
+  maxConcurrentTrades: 3,
 
   // Max total trades across ALL pairs combined (1 = single trade globally)
   maxTotalTrades: 1,
