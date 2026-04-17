@@ -109,7 +109,7 @@ export const config = {
     dailyStopLossKES:     parseFloat(process.env.DAILY_STOP_LOSS_KES) || 1_000,
     dailyProfitTargetKES: parseFloat(process.env.DAILY_PROFIT_TARGET_KES) || 1_000,
     maxLeverage:          parseInt(process.env.MAX_LEVERAGE) || 100,
-    maxOpenTrades:        1,     // Only 1 active trade at any time
+    maxOpenTrades:        3,     // Only 1 active trade at any time
     minRiskReward:        1.5,   // Minimum R:R ratio of 1:1.5
     usdKesRate:           parseFloat(process.env.USD_KES_RATE) || 129.0, // Approximate USD/KES rate
   },
