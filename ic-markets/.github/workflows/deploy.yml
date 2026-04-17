@@ -21,4 +21,4 @@ jobs:
             cd /home/kelvinmbugua/ic-robots            # ← your app directory on the VM
             git pull origin main
             npm install --production
-            pm2 restart index  # ← your pm2 process name.
+            pm2 restart index  # ← your pm2 process name
