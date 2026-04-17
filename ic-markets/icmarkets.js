@@ -116,6 +116,7 @@ export class ICMarketsClient {
     this.lastMessageTime = Date.now();
     this.healthCheckTimer = null;
     this.onConnectionLost = null;       // Callback for emergency alert
+    this.keepaliveTimer  = null;        // GCP idle connection keepalive
   }
 
   // ─── Connection ────────────────────────────────────────────────────────────
@@ -145,6 +146,7 @@ export class ICMarketsClient {
         this.lastMessageTime = Date.now();
         this._startHeartbeat();
         this._startHealthMonitor();
+        this._startKeepalive();
         resolve();
       });
 
@@ -163,6 +165,12 @@ export class ICMarketsClient {
         this.connected = false;
         clearInterval(this.heartbeatTimer);
         clearInterval(this.healthCheckTimer);
+        clearInterval(this.keepaliveTimer);
+        // Reject all pending requests — socket is dead
+        for (const [id, pending] of this.pendingRequests) {
+          pending.reject(new Error("WebSocket closed while waiting for response"));
+        }
+        this.pendingRequests.clear();
         if (wasConnected && !this.reconnecting) this._scheduleReconnect();
       });
     });
@@ -545,6 +553,11 @@ export class ICMarketsClient {
    * Send a message and (optionally) wait for the corresponding response.
    */
   _send(payloadType, payload, { expectEvent = false } = {}) {
+    // Guard: don't send on a closed/closing socket
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error("WebSocket not open — skipping send"));
+    }
+
     const clientMsgId = `m${this.msgCounter++}`;
     
     // 1. Encode the inner payload
@@ -681,6 +694,19 @@ export class ICMarketsClient {
         this._send(PT.HEARTBEAT, {}).catch(() => {});
       }
     }, 20_000);
+  }
+
+  /**
+   * WebSocket-level ping to prevent GCP/cloud firewall idle timeout.
+   * GCP drops idle TCP connections after ~10 minutes; this keeps them alive.
+   */
+  _startKeepalive() {
+    const KEEPALIVE_MS = 4 * 60 * 1000; // every 4 minutes
+    this.keepaliveTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.ping?.();
+      }
+    }, KEEPALIVE_MS);
   }
 
   // ─── Connection Health Monitor (Phase 4) ─────────────────────────────────
