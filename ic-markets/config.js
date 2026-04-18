@@ -108,7 +108,7 @@ export const config = {
     dailyStopLossKES:     parseFloat(process.env.DAILY_STOP_LOSS_KES) || 1_000,
     dailyProfitTargetKES: parseFloat(process.env.DAILY_PROFIT_TARGET_KES) || 1_000,
     maxLeverage:          100,
-    maxOpenTrades:        3,     
+    maxOpenTrades:        1,
     minRiskReward:        1.5,   
     usdKesRate:           parseFloat(process.env.USD_KES_RATE) || 129.0, 
   },
@@ -222,4 +222,5 @@ export const config = {
     // Initial virtual balance
     initialBalance: 500,
   },
+  connectionTimeoutSeconds: 10
 };
