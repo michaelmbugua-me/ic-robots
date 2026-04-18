@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trading Strategy Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f3; color: #1a1a1a; padding: 2rem; min-height: 100vh; }
+  h1 { font-size: 20px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #888; margin-bottom: 1.5rem; }
+  .grid-6 { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 1.5rem; }
+  .metric { background: #fff; border: 0.5px solid #e0e0de; border-radius: 10px; padding: 1rem; }
+  .metric-label { font-size: 12px; color: #888; margin-bottom: 4px; }
+  .metric-value { font-size: 22px; font-weight: 500; }
+  .metric-sub { font-size: 11px; color: #888; margin-top: 4px; }
+  .green { color: #3B6D11; }
+  .red { color: #A32D2D; }
+  .section-title { font-size: 11px; font-weight: 500; color: #888; letter-spacing: 0.06em; text-transform: uppercase; margin: 1.5rem 0 0.75rem; }
+  .chart-wrap { background: #fff; border: 0.5px solid #e0e0de; border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
+  .outcome-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .donut-wrap { position: relative; width: 150px; height: 150px; flex-shrink: 0; }
+  .donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; pointer-events: none; }
+  .donut-center .val { font-size: 20px; font-weight: 500; }
+  .donut-center .lbl { font-size: 11px; color: #888; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .legend-count { margin-left: auto; font-weight: 500; }
+  .legend-sub { color: #888; }
+  .trade-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 0.5px solid #f0f0ee; font-size: 13px; }
+  .badge { font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 500; }
+  .badge-buy { background: #E6F1FB; color: #0C447C; }
+  .badge-sell { background: #FAEEDA; color: #633806; }
+  .badge-tp { background: #EAF3DE; color: #27500A; }
+  .badge-sl { background: #FCEBEB; color: #791F1F; }
+  .badge-be { background: #f0f0ee; color: #666; }
+  .outcome-flex { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+  @media (max-width: 600px) { body { padding: 1rem; } .grid-6 { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+
+<h1>Strategy Analysis Dashboard</h1>
+<p class="subtitle">19 trades &nbsp;·&nbsp; 2025-11-21 to 2026-04-10</p>
+
+<div class="grid-6">
+  <div class="metric">
+    <div class="metric-label">Net profit</div>
+    <div class="metric-value green">+$58.36</div>
+    <div class="metric-sub">11.7% ROI</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Win rate</div>
+    <div class="metric-value">73.7%</div>
+    <div class="metric-sub">4 full TPs / 5 full SLs</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Total trades</div>
+    <div class="metric-value">19</div>
+    <div class="metric-sub">Executed signals</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Final balance</div>
+    <div class="metric-value">$558.36</div>
+    <div class="metric-sub">Started at $500</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Avg TP win</div>
+    <div class="metric-value green">+$17.80</div>
+    <div class="metric-sub">Full TP hits</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Avg full loss</div>
+    <div class="metric-value red">$-11.73</div>
+    <div class="metric-sub">Full SL hits</div>
+  </div>
+</div>
+
+<p class="section-title">Equity curve</p>
+<div class="chart-wrap">
+  <div style="position:relative;width:100%;height:250px;">
+    <canvas id="equityChart"></canvas>
+  </div>
+</div>
+
+<div class="outcome-row">
+  <div>
+    <p class="section-title">Monthly P&amp;L</p>
+    <div class="chart-wrap">
+      <div style="position:relative;width:100%;height:200px;">
+        <canvas id="monthlyChart"></canvas>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="section-title">Outcome breakdown</p>
+    <div class="chart-wrap">
+      <div class="outcome-flex">
+        <div class="donut-wrap">
+          <canvas id="donutChart" style="width:150px;height:150px;"></canvas>
+          <div class="donut-center">
+            <div class="val">19</div>
+            <div class="lbl">trades</div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:180px;" id="outcome-legend"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="section-title">Recent trades</p>
+<div class="chart-wrap" id="recent-trades"></div>
+
+<script>
+const trades = [{"id":"EUR-T1","direction":"SELL","entry":1.152025,"sl":1.151165882900225,"tp":1.1494686551060622,"units":6900,"time":"2025-11-21T12:40:00.000Z","isBreakeven":true,"exit":1.151165882900225,"exitTime":"2025-11-21T14:40:00.000Z","reason":"SL","profit":5.451147475688209,"balance":505.45114747568823},{"id":"EUR-T2","direction":"SELL","entry":1.1510550000000002,"sl":1.1507536927545408,"tp":1.1488114080787453,"units":8000,"time":"2025-11-21T17:05:00.000Z","isBreakeven":true,"exit":1.1507536927545408,"exitTime":"2025-11-21T17:50:00.000Z","reason":"SL","profit":1.858023877414138,"balance":507.3091713531024},{"id":"EUR-T3","direction":"SELL","entry":1.156755,"sl":1.1577010028419503,"tp":1.1551221948844894,"units":11000,"time":"2025-11-28T12:00:00.000Z","isBreakeven":false,"exit":1.1577010028419503,"exitTime":"2025-11-28T13:55:00.000Z","reason":"SL","profit":-11.169801742391629,"balance":496.13936961071073},{"id":"EUR-T4","direction":"SELL","entry":1.1673550000000001,"sl":1.167016656462955,"tp":1.1654310111289596,"units":9100,"time":"2025-12-04T14:20:00.000Z","isBreakeven":true,"exit":1.167016656462955,"exitTime":"2025-12-04T14:50:00.000Z","reason":"SL","profit":2.441642724896977,"balance":498.5810123356077},{"id":"EUR-T5","direction":"BUY","entry":1.168485,"sl":1.1690345371847848,"tp":1.1706515085096854,"units":8100,"time":"2026-01-07T15:20:00.000Z","isBreakeven":true,"exit":1.1690345371847848,"exitTime":"2026-01-07T15:50:00.000Z","reason":"SL","profit":3.8832339492208754,"balance":502.46424628482856},{"id":"EUR-T6","direction":"BUY","entry":1.172615,"sl":1.171522119760881,"tp":1.1745121844304143,"units":9400,"time":"2026-01-20T13:00:00.000Z","isBreakeven":false,"exit":1.1745121844304143,"exitTime":"2026-01-20T13:30:00.000Z","reason":"TP","profit":17.171643779885148,"balance":519.6358900647137},{"id":"EUR-T7","direction":"BUY","entry":1.1857149999999999,"sl":1.1870268427072408,"tp":1.187660145386612,"units":9400,"time":"2026-02-09T10:35:00.000Z","isBreakeven":true,"exit":1.187660145386612,"exitTime":"2026-02-09T12:15:00.000Z","reason":"TP","profit":17.615074843155355,"balance":537.250964907869},{"id":"EUR-T8","direction":"BUY","entry":1.183555,"sl":1.1827403960079326,"tp":1.184951287185721,"units":13600,"time":"2026-02-18T13:35:00.000Z","isBreakeven":false,"exit":1.1827403960079326,"exitTime":"2026-02-18T13:50:00.000Z","reason":"SL","profit":-12.044062813687088,"balance":525.2069020941819},{"id":"EUR-T9","direction":"SELL","entry":1.1768750000000001,"sl":1.1762508250074553,"tp":1.1735799454732725,"units":5600,"time":"2026-02-19T15:10:00.000Z","isBreakeven":true,"exit":1.1762508250074553,"exitTime":"2026-02-19T17:20:00.000Z","reason":"SL","profit":3.1000548196499467,"balance":528.3069569138319},{"id":"EUR-T10","direction":"BUY","entry":1.179565,"sl":1.1801537368226125,"tp":1.1816975154201528,"units":8800,"time":"2026-02-23T15:55:00.000Z","isBreakeven":true,"exit":1.1801537368226125,"exitTime":"2026-02-23T17:10:00.000Z","reason":"SL","profit":4.557918292468938,"balance":532.8648752063008},{"id":"EUR-T11","direction":"SELL","entry":1.178215,"sl":1.1789437715861024,"tp":1.1769732111450153,"units":15100,"time":"2026-02-25T12:20:00.000Z","isBreakeven":false,"exit":1.1789437715861024,"exitTime":"2026-02-25T13:15:00.000Z","reason":"SL","profit":-12.072243873674832,"balance":520.792631332626},{"id":"EUR-T12","direction":"SELL","entry":1.180255,"sl":1.1810370432248032,"tp":1.1789173221953542,"units":13700,"time":"2026-02-26T11:10:00.000Z","isBreakeven":false,"exit":1.1810370432248032,"exitTime":"2026-02-26T13:05:00.000Z","reason":"SL","profit":-11.684483209568285,"balance":509.10814812305773},{"id":"EUR-T13","direction":"SELL","entry":1.173035,"sl":1.1708835996926723,"tp":1.1699210797927306,"units":5800,"time":"2026-03-02T09:05:00.000Z","isBreakeven":true,"exit":1.1708835996926723,"exitTime":"2026-03-02T13:00:00.000Z","reason":"SL","profit":12.070279946154391,"balance":521.1784280692121},{"id":"EUR-T14","direction":"BUY","entry":1.147525,"sl":1.1485944631609433,"tp":1.1496504896915178,"units":8700,"time":"2026-03-16T13:00:00.000Z","isBreakeven":true,"exit":1.1496504896915178,"exitTime":"2026-03-16T13:50:00.000Z","reason":"TP","profit":17.892197513396543,"balance":539.0706255826087},{"id":"EUR-T15","direction":"SELL","entry":1.158965,"sl":1.1584365802881513,"tp":1.1556382447795173,"units":5700,"time":"2026-03-24T14:10:00.000Z","isBreakeven":true,"exit":1.1584365802881513,"exitTime":"2026-03-24T16:10:00.000Z","reason":"SL","profit":2.6157166873082778,"balance":541.686342269917},{"id":"EUR-T16","direction":"BUY","entry":1.1596149999999998,"sl":1.1584649986546898,"tp":1.1616150024215584,"units":9600,"time":"2026-04-01T12:30:00.000Z","isBreakeven":false,"exit":1.1616150024215584,"exitTime":"2026-04-01T12:40:00.000Z","reason":"TP","profit":18.531509006264297,"balance":560.2178512761812},{"id":"EUR-T17","direction":"BUY","entry":1.155805,"sl":1.1561074082509046,"tp":1.157989563727873,"units":9100,"time":"2026-04-07T10:10:00.000Z","isBreakeven":true,"exit":1.1561074082509046,"exitTime":"2026-04-07T12:45:00.000Z","reason":"SL","profit":2.1207629957799288,"balance":562.3386142719612},{"id":"EUR-T18","direction":"BUY","entry":1.169695,"sl":1.1679648534027367,"tp":1.172739263875074,"units":6500,"time":"2026-04-08T13:35:00.000Z","isBreakeven":false,"exit":1.1679648534027367,"exitTime":"2026-04-08T16:15:00.000Z","reason":"SL","profit":-11.70179655362451,"balance":550.6368177183367},{"id":"EUR-T19","direction":"BUY","entry":1.172385,"sl":1.1733431730401538,"tp":1.1746211856600697,"units":8700,"time":"2026-04-10T14:55:00.000Z","isBreakeven":true,"exit":1.1733431730401538,"exitTime":"2026-04-10T15:25:00.000Z","reason":"SL","profit":7.72387039617437,"balance":558.360688114511}];
+
+const tpTrades = trades.filter(t => t.reason === 'TP');
+const slFull = trades.filter(t => t.reason === 'SL' && !t.isBreakeven);
+const slBE = trades.filter(t => t.reason === 'SL' && t.isBreakeven);
+
+// Equity Chart
+new Chart(document.getElementById('equityChart'), {
+  type: 'line',
+  data: {
+    labels: trades.map((t, i) => i + 1),
+    datasets: [{
+      label: 'Balance ($)',
+      data: trades.map(t => parseFloat(t.balance.toFixed(2))),
+      borderColor: '#185FA5',
+      backgroundColor: 'rgba(24,95,165,0.07)',
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.2
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { maxTicksLimit: 20, color: '#999', font: { size: 10 } }, grid: { display: false } },
+      y: { ticks: { color: '#999', font: { size: 11 }, callback: v => '$' + v }, grid: { color: 'rgba(0,0,0,0.05)' } }
+    }
+  }
+});
+
+// Monthly P&L
+const monthMap = {};
+trades.forEach(t => {
+  const d = new Date(t.exitTime);
+  const key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  monthMap[key] = (monthMap[key] || 0) + t.profit;
+});
+const mKeys = Object.keys(monthMap).sort();
+const mVals = mKeys.map(k => parseFloat(monthMap[k].toFixed(2)));
+const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'bar',
+  data: {
+    labels: mKeys.map(k => { const [y,m] = k.split('-'); return months[+m-1] + ' \'' + y.slice(2); }),
+    datasets: [{
+      label: 'P&L ($)',
+      data: mVals,
+      backgroundColor: mVals.map(v => v >= 0 ? '#3B6D11' : '#A32D2D'),
+      borderRadius: 4
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: '#999', font: { size: 10 } }, grid: { display: false } },
+      y: { ticks: { color: '#999', font: { size: 11 }, callback: v => '$' + v.toFixed(0) }, grid: { color: 'rgba(0,0,0,0.05)' } }
+    }
+  }
+});
+
+// Donut Chart
+new Chart(document.getElementById('donutChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['TP hit', 'Breakeven SL', 'Full loss'],
+    datasets: [{
+      data: [tpTrades.length, slBE.length, slFull.length],
+      backgroundColor: ['#3B6D11', '#185FA5', '#A32D2D'],
+      borderWidth: 0,
+      hoverOffset: 4
+    }]
+  },
+  options: {
+    responsive: false, cutout: '68%',
+    plugins: { legend: { display: false } }
+  }
+});
+
+const legendEl = document.getElementById('outcome-legend');
+[
+  { color: '#3B6D11', label: 'TP hit (full win)', count: tpTrades.length },
+  { color: '#185FA5', label: 'Breakeven SL', count: slBE.length },
+  { color: '#A32D2D', label: 'Full SL (loss)', count: slFull.length }
+].forEach(i => {
+  legendEl.innerHTML += `<div class="legend-item"><span class="legend-dot" style="background:${i.color}"></span><span class="legend-sub">${i.label}</span><span class="legend-count">${i.count}</span></div>`;
+});
+
+const rt = document.getElementById('recent-trades');
+trades.slice(-15).reverse().forEach(t => {
+  const d = new Date(t.time);
+  const dateStr = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: '2-digit' });
+  const profitColor = t.profit >= 0 ? '#3B6D11' : '#A32D2D';
+  const profitStr = (t.profit >= 0 ? '+' : '') + '$' + t.profit.toFixed(2);
+  rt.innerHTML += `<div class="trade-row">
+    <span style="color:#999;min-width:85px;font-size:12px;">${dateStr}</span>
+    <span class="badge badge-${t.direction.toLowerCase()}">${t.direction}</span>
+    <span style="flex:1;color:#999;font-size:12px;">${t.id}</span>
+    <span class="badge badge-${t.reason.toLowerCase()}">${t.reason}</span>
+    ${t.isBreakeven && t.reason === 'SL' ? '<span class="badge badge-be">BE</span>' : '<span style="width:28px;display:inline-block;"></span>'}
+    <span style="font-weight:500;color:${profitColor};min-width:70px;text-align:right;">${profitStr}</span>
+  </div>`;
+});
+</script>
+</body>
+</html>

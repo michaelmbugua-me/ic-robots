@@ -129,7 +129,7 @@ export const config = {
   trailingStopATR: 1.0, 
 
   // ─── Multi-Trade Management ────────────────────────────────────────────
-  maxConcurrentTrades: 3,
+  maxConcurrentTrades: 1,
   maxTotalTrades: 1, // Global cap across all pairs
   minTradeDistancePips: 5,
   minStopDistancePips: 2,

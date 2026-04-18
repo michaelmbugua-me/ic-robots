@@ -492,6 +492,18 @@ async function main() {
     if (dd > maxDD) maxDD = dd;
   }
 
+  // Save results for analysis
+  const backtestResults = {
+    type: "backtest",
+    timestamp: new Date().toISOString(),
+    totalNetProfit,
+    totalTrades,
+    winRate: ((totalWins / Math.max(1, totalTrades)) * 100).toFixed(1),
+    trades: allTradeHistory
+  };
+  fs.writeFileSync("trades_backtest.json", JSON.stringify(backtestResults, null, 2));
+  console.log(`  📁 Results saved to trades_backtest.json for dashboard analysis.`);
+
   console.log(`${"-".repeat(60)}`);
   console.log(`  Total Trades  : ${totalTrades}`);
   console.log(`  Win Rate      : ${((totalWins / Math.max(1, totalTrades)) * 100).toFixed(1)}%`);

@@ -15,7 +15,8 @@
     "gbp": "node index.js --pair GBP_USD",
     "gbp-auto": "node index.js --pair GBP_USD --auto-execute",
     "jpn": "node index.js --pair USD_JPY",
-    "jpn-auto": "node index.js --pair USD_JPY --auto-execute"
+    "jpn-auto": "node index.js --pair USD_JPY --auto-execute",
+    "analyze": "node trade-analyzer.js && node generate-report.js"
   },
   "dependencies": {
     "dotenv": "^17.3.1",
