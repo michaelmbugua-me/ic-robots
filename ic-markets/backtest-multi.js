@@ -29,6 +29,152 @@ const INITIAL_BALANCE = config.backtest.initialBalance || 500;
 const MOCK_AI = mockArg;
 const COMMISSION_SIDE_USD = config.backtest.commissionPerSideUSD || 3.00;
 
+// Global state for helper functions
+let balance = INITIAL_BALANCE;
+const pairData = {};
+
+function calculateUnits(pair, signal, indicators, currentBalance) {
+  const p = pairData[pair];
+  const riskPercent = config.riskPercentPerTrade || 2.0;
+  const riskAmount = currentBalance * (riskPercent / 100);
+  const slDistance = Math.abs(signal.entry - signal.stopLoss);
+  if (slDistance === 0) return 0;
+
+  const slPips = slDistance / p.pipSize;
+  let pipValue = 10;
+  if (pair.startsWith("USD/")) pipValue = (p.pipSize / signal.entry) * 100000;
+  else if (!pair.endsWith("_USD") && !pair.endsWith("/USD")) pipValue = (p.pipSize / signal.entry) * 100000;
+
+  const lots = riskAmount / (slPips * pipValue);
+  let units = Math.floor(lots * 100000);
+  const maxUnits = config.maxPositionSizeUnits || 50000;
+  if (units > maxUnits) units = maxUnits;
+
+  const minVol = 100;
+  const stepVol = 100;
+  units = Math.floor(units / stepVol) * stepVol;
+  return units < minVol ? 0 : units;
+}
+
+function closeTrade(pair, trade, exitPrice, reason, exitTime) {
+  const p = pairData[pair];
+  const rawPnL = trade.direction === "BUY" ? (exitPrice - trade.entry) * trade.units : (trade.entry - exitPrice) * trade.units;
+
+  const entryVolumeUSD = pair.startsWith("USD") ? trade.units : (trade.units * trade.entry);
+  const exitVolumeUSD = pair.startsWith("USD") ? trade.units : (trade.units * exitPrice);
+  const commission = ((entryVolumeUSD / 100000) * COMMISSION_SIDE_USD) + ((exitVolumeUSD / 100000) * COMMISSION_SIDE_USD);
+
+  const netProfit = rawPnL - commission;
+  if (netProfit < 0 && reason === "SL") p.lastLossTime = exitTime;
+
+  balance += netProfit;
+  const result = { ...trade, exit: exitPrice, exitTime, reason, profit: netProfit, balance };
+  p.tradeHistory.push(result);
+  console.log(`  ✅ [${exitTime}] ${pair} Closed ${trade.id} (${reason}) | Net PnL: $${netProfit.toFixed(2)} | Balance: $${balance.toFixed(2)}`);
+}
+
+function handleSignal(pair, signal, ask, bid, time, indicators) {
+  const p = pairData[pair];
+  const isFlip = p.lastSignal && p.lastSignal !== signal.action;
+
+  if (isFlip) {
+    const opposite = signal.action === "BUY" ? "SELL" : "BUY";
+    p.activeTrades.filter(t => t.direction === opposite).forEach(t => {
+        const exitPrice = t.direction === "BUY" ? bid - (config.backtest.slippagePips * p.pipSize) : ask + (config.backtest.slippagePips * p.pipSize);
+        closeTrade(pair, t, exitPrice, "FLIP", time);
+    });
+    p.activeTrades = p.activeTrades.filter(t => t.direction !== opposite);
+  }
+
+  if (p.activeTrades.length < config.maxConcurrentTrades) {
+    const units = calculateUnits(pair, signal, indicators, balance);
+    if (units > 0) {
+      const slippage = (config.backtest.slippagePips || 0) * p.pipSize;
+      const entryPrice = signal.action === "BUY" ? ask + slippage : bid - slippage;
+      const trade = {
+          id: `${pair.substring(0,3)}-T${p.tradeHistory.length + 1}`,
+          direction: signal.action,
+          entry: entryPrice,
+          sl: signal.stopLoss,
+          tp: signal.takeProfit,
+          units: units,
+          time,
+          isBreakeven: false
+      };
+      p.activeTrades.push(trade);
+      console.log(`  🚀 [${time}] ${pair} Opened ${trade.direction} at ${trade.entry.toFixed(5)} (Units: ${trade.units})`);
+    }
+  }
+  p.lastSignal = signal.action;
+}
+
+function manageActiveTrades(pair, indicators, currentPrice) {
+  const p = pairData[pair];
+  if (p.activeTrades.length === 0 || !config.useBreakeven) return;
+  const pc = { ...config.strategy, ...(config.pairOverrides?.[pair] || {}) };
+  const beTrigger = pc.breakevenTriggerATR ?? config.breakevenTriggerATR;
+  const trailMul = pc.trailingStopATR ?? config.trailingStopATR ?? 1.0;
+
+  for (const trade of p.activeTrades) {
+    const profitPips = trade.direction === "BUY"
+      ? (currentPrice - trade.entry) / p.pipSize
+      : (trade.entry - currentPrice) / p.pipSize;
+
+    const triggerPips = (indicators.atr * beTrigger) / p.pipSize;
+
+    if (profitPips >= triggerPips) {
+      if (config.useTrailingStop) {
+        const trailDist = indicators.atr * trailMul;
+        let newSL = trade.direction === "BUY" ? currentPrice - trailDist : currentPrice + trailDist;
+
+        const buffer = 1.0 * p.pipSize;
+        const minSL = trade.direction === "BUY" ? trade.entry + buffer : trade.entry - buffer;
+        if (trade.direction === "BUY" && newSL < minSL) newSL = minSL;
+        if (trade.direction === "SELL" && newSL > minSL) newSL = minSL;
+
+        const shouldUpdate = trade.direction === "BUY" ? newSL > trade.sl : newSL < trade.sl;
+        if (shouldUpdate) {
+          trade.sl = newSL;
+          trade.isBreakeven = true;
+        }
+      } else {
+        if (trade.isBreakeven) continue;
+        const buffer = 1.0 * p.pipSize;
+        const newSL = trade.direction === "BUY" ? trade.entry + buffer : trade.entry - buffer;
+        trade.sl = newSL;
+        trade.isBreakeven = true;
+      }
+    }
+  }
+}
+
+function getHTFIndicators(candles, customFactor = null) {
+  let htfIndicators = null;
+  const defaultFactor = config.granularity === "M5" ? 3 : (config.granularity === "M15" ? 4 : 1);
+  const htfFactor = customFactor || defaultFactor;
+
+  if (htfFactor > 1) {
+    const htfCandles = [];
+    for (let j = 0; j < candles.length; j += htfFactor) {
+      const chunk = candles.slice(j, j + htfFactor);
+      if (chunk.length === htfFactor) {
+        htfCandles.push({
+          time: chunk[0].time,
+          mid: {
+            o: chunk[0].mid.o,
+            h: Math.max(...chunk.map(c => parseFloat(c.mid.h))).toFixed(5),
+            l: Math.min(...chunk.map(c => parseFloat(c.mid.l))).toFixed(5),
+            c: chunk[chunk.length - 1].mid.c
+          },
+          volume: chunk.reduce((s, c) => s + (c.volume || 0), 0)
+        });
+      }
+    }
+    if (htfCandles.length > 50) htfIndicators = calculateIndicators(htfCandles);
+  }
+  return htfIndicators;
+}
+
 async function main() {
   console.log(`\n${"═".repeat(60)}`);
   console.log(`  🤖  IC MARKETS MULTI-PAIR BACKTESTER`);
@@ -53,7 +199,6 @@ async function main() {
   }
 
   // Load data for all pairs
-  const pairData = {};
   const allTimestamps = new Set();
 
   for (const pair of PAIRS) {
@@ -78,8 +223,7 @@ async function main() {
   }
 
   const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => new Date(a) - new Date(b));
-  let balance = INITIAL_BALANCE;
-  const windowSize = 200;
+  const windowSize = 1000;
 
   for (const timestamp of sortedTimestamps) {
     for (const pair of PAIRS) {
@@ -102,6 +246,17 @@ async function main() {
       const currentCandles = p.candles.slice(p.candleIndex - windowSize, p.candleIndex);
       const nextCandle = p.candles[p.candleIndex];
       const indicators = calculateIndicators(currentCandles);
+      
+      const htfIndicators = getHTFIndicators(currentCandles);
+      const h1Factor = config.granularity === "M5" ? 12 : (config.granularity === "M15" ? 4 : 1);
+      const h1Indicators = h1Factor > 1 ? getHTFIndicators(currentCandles, h1Factor) : indicators;
+
+      if (h1Indicators) {
+        indicators.ema200 = h1Indicators.ema200;
+        indicators.srZone = h1Indicators.srZone;
+        indicators.nearSupport = h1Indicators.nearSupport;
+        indicators.nearResistance = h1Indicators.nearResistance;
+      }
 
       const midOpen = parseFloat(nextCandle.mid.o);
       const midHigh = parseFloat(nextCandle.mid.h);
@@ -110,10 +265,10 @@ async function main() {
       const hasActuals = nextCandle.bid && nextCandle.ask && (nextCandle.bid.c !== nextCandle.ask.c);
       const bidHigh = hasActuals ? parseFloat(nextCandle.bid.h) : midHigh - p.spread/2;
       const bidLow  = hasActuals ? parseFloat(nextCandle.bid.l) : midLow - p.spread/2;
-      const bidOpen = hasActuals ? parseFloat(nextCandle.bid.o) : midOpen - p.spread/2;
       const askHigh = hasActuals ? parseFloat(nextCandle.ask.h) : midHigh + p.spread/2;
       const askLow  = hasActuals ? parseFloat(nextCandle.ask.l) : midLow + p.spread/2;
       const askOpen = hasActuals ? parseFloat(nextCandle.ask.o) : midOpen + p.spread/2;
+      const bidOpen = hasActuals ? parseFloat(nextCandle.bid.o) : midOpen - p.spread/2;
 
       const currentAsk = askOpen;
       const currentBid = bidOpen;
@@ -162,7 +317,6 @@ async function main() {
       }
 
       // 3. HTF and Filters
-      const htfIndicators = getHTFIndicators(currentCandles);
       let possibleActions = ["BUY", "SELL", "WAIT"];
       const { rsiThresholdLow, rsiThresholdHigh, emaFast, emaSlow } = config.strategy;
       const pairCfg = { ...config.strategy, ...(config.pairOverrides?.[pair] || {}) };
@@ -178,6 +332,10 @@ async function main() {
 
       if (fastEma <= slowEma) possibleActions = possibleActions.filter(a => a !== "BUY");
       if (fastEma >= slowEma) possibleActions = possibleActions.filter(a => a !== "SELL");
+
+      const ema200 = indicators.ema200;
+      if (ema200 && midOpen > ema200) possibleActions = possibleActions.filter(a => a !== "SELL");
+      if (ema200 && midOpen < ema200) possibleActions = possibleActions.filter(a => a !== "BUY");
 
       // Falling Knife Filter
       const isSharpDrop = indicators.momentum < -1.2 * indicators.atr;
@@ -210,9 +368,6 @@ async function main() {
             const { atrMultiplierSL, atrMultiplierTP } = pairCfg;
             const strategyMode = pairCfg.strategyMode || "pullback";
 
-            const isSharpDrop = indicators.momentum < -1.5 * indicators.atr;
-            const isSharpRise = indicators.momentum > 1.5 * indicators.atr;
-
             const macdHist = indicators.macd.hist;
             const prevHist = indicators.prevMacdHist;
             const macdTurningBullish = macdHist !== null && prevHist !== null && (macdHist > prevHist);
@@ -224,51 +379,15 @@ async function main() {
             let action = "WAIT";
 
             if (strategyMode === "momentum") {
-              // ─── MOMENTUM/BREAKOUT STRATEGY (GBP_USD) ───
-              // Buy when price breaks ABOVE upper BB with confirming momentum
-              // Sell when price breaks BELOW lower BB with confirming momentum
-              const rsiVal = indicators.rsi;
-              const buyRsiMin = pairCfg.rsiMomentumBuyMin || 55;
-              const sellRsiMax = pairCfg.rsiMomentumSellMax || 45;
-
-              const isBullishBreakout = midOpen > indicators.bbands.upper
-                && rsiVal > buyRsiMin && rsiVal < 85;
-              const isBearishBreakout = midOpen < indicators.bbands.lower
-                && rsiVal < sellRsiMax && rsiVal > 15;
-
-              // Quality gate: BB must be expanding from a squeeze (compressed bands → breakout)
-              if (pairCfg.requireBbExpansion && !indicators.bbSqueezeBreakout) {
-                action = "WAIT";
-              }
-              // Quality gate: volume must be above threshold (genuine breakout)
-              else if (pairCfg.requireVolume && indicators.volumeRatio < minVolRatio) {
-                action = "WAIT";
-              }
-              // Quality gate: breakout candle must show conviction (decent body)
-              else if (pairCfg.minCandleBodyATR && indicators.candleBodyATR < pairCfg.minCandleBodyATR) {
-                action = "WAIT";
-              }
-              else {
-                // MACD alignment (not requiring histogram acceleration — sustained trends flatten)
-                const macdBullish = indicators.macd.macd > 0 && macdHist > 0;
-                const macdBearish = indicators.macd.macd < 0 && macdHist < 0;
-
-                let buyConf = 0, sellConf = 0;
-                if (macdBullish) buyConf++;
-                if (indicators.emaSlope > 0) buyConf++;
-
-                if (macdBearish) sellConf++;
-                if (indicators.emaSlope < 0) sellConf++;
-
-                action = (isBullishBreakout && !isSharpRise && buyConf >= 1 && possibleActions.includes("BUY")) ? "BUY" :
-                         (isBearishBreakout && !isSharpDrop && sellConf >= 1 && possibleActions.includes("SELL")) ? "SELL" : "WAIT";
-              }
-
+              // MOMENTUM placeholder
+              action = "WAIT";
             } else {
               // ─── PULLBACK STRATEGY (EUR_USD, default) ───
-              // Buy when oversold near lower BB, sell when overbought near upper BB
-              const isOverbought = indicators.rsi > rsiThresholdHigh && midOpen > (indicators.bbands.upper - (0.5 * indicators.atr));
-              const isOversold   = indicators.rsi < rsiThresholdLow  && midOpen < (indicators.bbands.lower + (0.5 * indicators.atr));
+              const isOverbought = indicators.rsi > rsiThresholdHigh && midOpen > (indicators.bbands.upper - (1.0 * indicators.atr));
+              const isOversold   = indicators.rsi < rsiThresholdLow  && midOpen < (indicators.bbands.lower + (1.0 * indicators.atr));
+
+              const vwapBuyBias  = indicators.vwap ? midOpen < indicators.vwap : true;
+              const vwapSellBias = indicators.vwap ? midOpen > indicators.vwap : true;
 
               let buyConfirmCount = 0;
               if (indicators.isBullishRejection) buyConfirmCount++;
@@ -282,8 +401,17 @@ async function main() {
               if (indicators.volumeRatio >= minVolRatio) sellConfirmCount++;
               const hasSellConfirmation = sellConfirmCount >= minConfirmations;
 
-              action = (isOversold  && !isSharpDrop && hasBuyConfirmation)  ? "BUY" :
-                       (isOverbought && !isSharpRise && hasSellConfirmation) ? "SELL" : "WAIT";
+              action = (isOversold  && !isSharpDrop && hasBuyConfirmation && vwapBuyBias  && possibleActions.includes("BUY"))  ? "BUY" :
+                       (isOverbought && !isSharpRise && hasSellConfirmation && vwapSellBias && possibleActions.includes("SELL")) ? "SELL" : "WAIT";
+              
+              // Phase 3: Price Action Trigger Gate (Optional Hardening)
+              if (action !== "WAIT" && config.strategy.usePriceActionTrigger) {
+                const isBuy = action === "BUY";
+                const hasPAConfirm = isBuy ? indicators.hasBullishPriceAction : indicators.hasBearishPriceAction;
+                if (!hasPAConfirm) {
+                    // Optional logging
+                }
+              }
             }
 
             const atr = indicators.atr || (p.pipSize * 15);
@@ -303,195 +431,19 @@ async function main() {
           } else {
             const systemPrompt = getSystemPrompt(pair);
             const userPrompt = getUserPrompt(pair, config.granularity, indicators, currentCandles.slice(-30), htfIndicators, possibleActions);
-            
-            process.stdout.write(`[${timestamp}] ${pair} AI Query... `);
-            const startTime = Date.now();
             signal = await ai.getSignal(systemPrompt, userPrompt);
-            const latency = ((Date.now() - startTime) / 1000).toFixed(1);
-            console.log(`${signal.action} (${signal.confidence}%) [${latency}s]`);
           }
 
-          // Validation & ATR Correction
-          if (signal.action !== "WAIT") {
-            if (!possibleActions.includes(signal.action)) {
-                signal.action = "WAIT";
-            } else {
-                const atr = indicators.atr || 0;
-                const { atrMultiplierSL: valSL, atrMultiplierTP: valTP } = pairCfg;
-                const minDistance = Math.max(p.pipSize * config.minStopDistancePips, atr * config.atrMultiplierFloor);
-                const idealSLDist = Math.max(minDistance, atr * valSL);
-                const idealTPDist = Math.max(minDistance, atr * valTP);
-
-                if (Math.abs(signal.entry - midOpen) / midOpen > (config.maxPriceDeviationPercent / 100)) {
-                    signal.entry = midOpen;
-                }
-
-                const slDist = Math.abs(signal.stopLoss - signal.entry);
-                const tpDist = Math.abs(signal.takeProfit - signal.entry);
-                const isIllogical = (signal.action === "BUY" && (signal.stopLoss >= signal.entry || signal.takeProfit <= signal.entry)) ||
-                                    (signal.action === "SELL" && (signal.stopLoss <= signal.entry || signal.takeProfit >= signal.entry));
-                
-                if (!signal.stopLoss || !signal.takeProfit || isIllogical || slDist < minDistance || tpDist < minDistance) {
-                    if (signal.action === "BUY") {
-                        signal.stopLoss = signal.entry - idealSLDist;
-                        signal.takeProfit = signal.entry + idealTPDist;
-                    } else {
-                        signal.stopLoss = signal.entry + idealSLDist;
-                        signal.takeProfit = signal.entry - idealTPDist;
-                    }
-                }
-            }
-          }
-
-          if (signal.action !== "WAIT" && signal.confidence >= config.minConfidenceToExecute) {
+          if (signal.action !== "WAIT" && signal.confidence >= (config.minConfidenceToExecute || 80)) {
             handleSignal(pair, signal, currentAsk, currentBid, timestamp, indicators);
           }
         } catch (err) {
-          console.log(`[${timestamp}] ${pair} ❌ AI Error: ${err.message}`);
+          console.log(`[${timestamp}] ${pair} ❌ Error: ${err.message}`);
         }
       } else if (p.lastSignal && p.lastSignal !== "WAIT") {
           p.lastSignal = "WAIT";
       }
     }
-  }
-
-  function handleSignal(pair, signal, ask, bid, time, indicators) {
-    const p = pairData[pair];
-    const isFlip = p.lastSignal && p.lastSignal !== signal.action;
-    
-    if (isFlip) {
-      const opposite = signal.action === "BUY" ? "SELL" : "BUY";
-      p.activeTrades.filter(t => t.direction === opposite).forEach(t => {
-          const exitPrice = t.direction === "BUY" ? bid - (config.backtest.slippagePips * p.pipSize) : ask + (config.backtest.slippagePips * p.pipSize);
-          closeTrade(pair, t, exitPrice, "FLIP", time);
-      });
-      p.activeTrades = p.activeTrades.filter(t => t.direction !== opposite);
-    }
-
-    if (p.activeTrades.length < config.maxConcurrentTrades) {
-      const units = calculateUnits(pair, signal, indicators, balance);
-      if (units > 0) {
-        const slippage = (config.backtest.slippagePips || 0) * p.pipSize;
-        const entryPrice = signal.action === "BUY" ? ask + slippage : bid - slippage;
-        const trade = {
-            id: `${pair.substring(0,3)}-T${p.tradeHistory.length + 1}`,
-            direction: signal.action,
-            entry: entryPrice,
-            sl: signal.stopLoss,
-            tp: signal.takeProfit,
-            units: units,
-            time,
-            isBreakeven: false
-        };
-        p.activeTrades.push(trade);
-        console.log(`  🚀 [${time}] ${pair} Opened ${trade.direction} at ${trade.entry.toFixed(5)} (Units: ${trade.units})`);
-      }
-    }
-    p.lastSignal = signal.action;
-  }
-
-  function manageActiveTrades(pair, indicators, currentPrice) {
-    const p = pairData[pair];
-    if (p.activeTrades.length === 0 || !config.useBreakeven) return;
-    const pc = { ...config.strategy, ...(config.pairOverrides?.[pair] || {}) };
-    const beTrigger = pc.breakevenTriggerATR ?? config.breakevenTriggerATR;
-    const trailMul = pc.trailingStopATR ?? config.trailingStopATR ?? 1.0;
-
-    for (const trade of p.activeTrades) {
-      const profitPips = trade.direction === "BUY"
-        ? (currentPrice - trade.entry) / p.pipSize
-        : (trade.entry - currentPrice) / p.pipSize;
-      
-      const triggerPips = (indicators.atr * beTrigger) / p.pipSize;
-
-      if (profitPips >= triggerPips) {
-        if (config.useTrailingStop) {
-          const trailDist = indicators.atr * trailMul;
-          let newSL = trade.direction === "BUY" ? currentPrice - trailDist : currentPrice + trailDist;
-
-          const buffer = 1.0 * p.pipSize;
-          const minSL = trade.direction === "BUY" ? trade.entry + buffer : trade.entry - buffer;
-          if (trade.direction === "BUY" && newSL < minSL) newSL = minSL;
-          if (trade.direction === "SELL" && newSL > minSL) newSL = minSL;
-
-          const shouldUpdate = trade.direction === "BUY" ? newSL > trade.sl : newSL < trade.sl;
-          if (shouldUpdate) {
-            trade.sl = newSL;
-            trade.isBreakeven = true;
-          }
-        } else {
-          if (trade.isBreakeven) continue;
-          const buffer = 1.0 * p.pipSize;
-          const newSL = trade.direction === "BUY" ? trade.entry + buffer : trade.entry - buffer;
-          trade.sl = newSL;
-          trade.isBreakeven = true;
-          console.log(`  🛡️  [${time}] ${pair} Trade ${trade.id} reached profit target. Moving SL to Entry + Buffer.`);
-        }
-      }
-    }
-  }
-
-  function closeTrade(pair, trade, exitPrice, reason, exitTime) {
-    const p = pairData[pair];
-    const rawPnL = trade.direction === "BUY" ? (exitPrice - trade.entry) * trade.units : (trade.entry - exitPrice) * trade.units;
-    
-    const entryVolumeUSD = pair.startsWith("USD") ? trade.units : (trade.units * trade.entry);
-    const exitVolumeUSD = pair.startsWith("USD") ? trade.units : (trade.units * exitPrice);
-    const commission = ((entryVolumeUSD / 100000) * COMMISSION_SIDE_USD) + ((exitVolumeUSD / 100000) * COMMISSION_SIDE_USD);
-    
-    const netProfit = rawPnL - commission;
-    if (netProfit < 0 && reason === "SL") p.lastLossTime = exitTime;
-
-    balance += netProfit;
-    const result = { ...trade, exit: exitPrice, exitTime, reason, profit: netProfit, balance };
-    p.tradeHistory.push(result);
-    console.log(`  ✅ [${exitTime}] ${pair} Closed ${trade.id} (${reason}) | Net PnL: $${netProfit.toFixed(2)} | Balance: $${balance.toFixed(2)}`);
-  }
-
-  function calculateUnits(pair, signal, indicators, currentBalance) {
-    const p = pairData[pair];
-    const riskAmount = currentBalance * (config.riskPercentPerTrade / 100);
-    const slDistance = Math.abs(signal.entry - signal.stopLoss);
-    if (slDistance === 0) return 0;
-
-    const slPips = slDistance / p.pipSize;
-    let pipValue = 10;
-    if (pair.startsWith("USD/")) pipValue = (p.pipSize / signal.entry) * 100000;
-    else if (!pair.endsWith("_USD") && !pair.endsWith("/USD")) pipValue = (p.pipSize / signal.entry) * 100000;
-
-    const lots = riskAmount / (slPips * pipValue);
-    let units = Math.floor(lots * 100000);
-    if (units > config.maxPositionSizeUnits) units = config.maxPositionSizeUnits;
-    
-    const minVol = 100;
-    const stepVol = 100;
-    units = Math.floor(units / stepVol) * stepVol;
-    return units < minVol ? 0 : units;
-  }
-
-  function getHTFIndicators(candles) {
-    let htfIndicators = null;
-    const htfFactor = config.granularity === "M5" ? 3 : (config.granularity === "M15" ? 4 : 1);
-    if (htfFactor > 1) {
-      const htfCandles = [];
-      for (let j = 0; j < candles.length; j += htfFactor) {
-        const chunk = candles.slice(j, j + htfFactor);
-        if (chunk.length === htfFactor) {
-          htfCandles.push({
-            time: chunk[0].time,
-            mid: {
-              o: chunk[0].mid.o,
-              h: Math.max(...chunk.map(c => parseFloat(c.mid.h))).toFixed(5),
-              l: Math.min(...chunk.map(c => parseFloat(c.mid.l))).toFixed(5),
-              c: chunk[chunk.length - 1].mid.c
-            },
-            volume: chunk.reduce((s, c) => s + (c.volume || 0), 0)
-          });
-        }
-      }
-      if (htfCandles.length > 50) htfIndicators = calculateIndicators(htfCandles);
-    }
-    return htfIndicators;
   }
 
   // Final Summary

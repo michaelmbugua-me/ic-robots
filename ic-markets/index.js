@@ -222,7 +222,7 @@ async function tickPair(pair, timestamp) {
   const [baseCandles, htfCandles, h1Candles] = await Promise.all([
     icmarkets.getCandles(pair, baseGranularity, 200),
     icmarkets.getCandles(pair, htfGranularity, 50).catch(() => null),
-    icmarkets.getCandles(pair, "H1", 220).catch(() => null)  // Need 200+ for EMA(200)
+    icmarkets.getCandles(pair, "H1", 500).catch(() => null)  // 500 bars for precise EMA(200) warm-up
   ]);
 
   if (!baseCandles || baseCandles.length < 50) {
@@ -248,7 +248,14 @@ async function tickPair(pair, timestamp) {
 
   const indicators = calculateIndicators(validCandles);
   const htfIndicators = htfCandles ? calculateIndicators(htfCandles) : null;
+  
+  // Use H1 for institutional S/R zones (Higher Timeframe Hardening)
   const h1Indicators  = h1Candles && h1Candles.length >= 200 ? calculateIndicators(h1Candles) : null;
+  if (h1Indicators) {
+    indicators.srZone = h1Indicators.srZone;
+    indicators.nearSupport = h1Indicators.nearSupport;
+    indicators.nearResistance = h1Indicators.nearResistance;
+  }
 
   const isJPY = pair.includes("JPY");
   const pipSize = isJPY ? 0.01 : 0.0001;
@@ -381,8 +388,12 @@ async function tickPair(pair, timestamp) {
     }
   } else {
     // ─── PULLBACK STRATEGY (EUR_USD, default) ───
-    const isOverbought = indicators.rsi > rsiThresholdHigh && indicators.currentPrice > (indicators.bbands.upper - (0.5 * indicators.atr));
-    const isOversold   = indicators.rsi < rsiThresholdLow  && indicators.currentPrice < (indicators.bbands.lower + (0.5 * indicators.atr));
+    const isOverbought = indicators.rsi > rsiThresholdHigh && indicators.currentPrice > (indicators.bbands.upper - (1.0 * indicators.atr));
+    const isOversold   = indicators.rsi < rsiThresholdLow  && indicators.currentPrice < (indicators.bbands.lower + (1.0 * indicators.atr));
+
+    // VWAP Bias: Only buy below VWAP, only sell above VWAP (Mean Reversion)
+    const vwapBuyBias  = indicators.vwap ? indicators.currentPrice < indicators.vwap : true;
+    const vwapSellBias = indicators.vwap ? indicators.currentPrice > indicators.vwap : true;
 
     let buyConfirmCount = 0;
     if (indicators.isBullishRejection) buyConfirmCount++;
@@ -396,8 +407,8 @@ async function tickPair(pair, timestamp) {
     if (indicators.volumeRatio >= minVolRatio) sellConfirmCount++;
     const hasSellConfirmation = sellConfirmCount >= minConfirmations;
 
-    technicalAction = (isOversold  && hasBuyConfirmation  && possibleActions.includes("BUY"))  ? "BUY" :
-                      (isOverbought && hasSellConfirmation && possibleActions.includes("SELL")) ? "SELL" : "WAIT";
+    technicalAction = (isOversold  && hasBuyConfirmation && vwapBuyBias  && possibleActions.includes("BUY"))  ? "BUY" :
+                      (isOverbought && hasSellConfirmation && vwapSellBias && possibleActions.includes("SELL")) ? "SELL" : "WAIT";
   }
 
   // ─── Phase 3: Price Action Trigger Gate ──────────────────────────────────

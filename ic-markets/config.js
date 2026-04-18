@@ -101,134 +101,55 @@ export const config = {
   sessionStartUTC: 8,
   sessionEndUTC:   18,
 
-  // ─── KES Risk Management (Phase 1: Global Risk Guardrails) ─────────────
+  // ─── KES Risk Management (Primary) ─────────────────────────────────────
   // 50,000 KES account targeting 500–1,000 KES daily profit
-  // Daily drawdown hard cap: 1,000 KES (2%)
   risk: {
     accountCapitalKES:    parseFloat(process.env.ACCOUNT_CAPITAL_KES) || 50_000,
     dailyStopLossKES:     parseFloat(process.env.DAILY_STOP_LOSS_KES) || 1_000,
     dailyProfitTargetKES: parseFloat(process.env.DAILY_PROFIT_TARGET_KES) || 1_000,
-    maxLeverage:          parseInt(process.env.MAX_LEVERAGE) || 100,
-    maxOpenTrades:        3,     // Only 1 active trade at any time
-    minRiskReward:        1.5,   // Minimum R:R ratio of 1:1.5
-    usdKesRate:           parseFloat(process.env.USD_KES_RATE) || 129.0, // Approximate USD/KES rate
+    maxLeverage:          100,
+    maxOpenTrades:        3,     
+    minRiskReward:        1.5,   
+    usdKesRate:           parseFloat(process.env.USD_KES_RATE) || 129.0, 
   },
 
-  // ─── Risk Management (legacy, still used for unit calc fallback) ───────
-  // % of account balance to risk per trade — never go above 2%
+  // Fallback risk percentage (used by backtester)
   riskPercentPerTrade: 2.0,
 
-  // Max allowed position size (in units) to prevent huge lot sizes if SL is tight
-  // 10,000 = 0.1 lots. 100,000 = 1.0 lot.
-  maxPositionSizeUnits: 50000,
-
-  // Max allowed price deviation (%) between AI entry and current market price
-  // (Prevents execution on AI hallucinations or old data)
-  maxPriceDeviationPercent: 0.1,
-
-  // Min Claude confidence (0–100) required to auto-execute a trade
-  // Raise this to be more selective (recommended: 70+)
-  minConfidenceToExecute: 80,
-
   // ─── Safety & Circuit Breakers ──────────────────────────────────────────
-  // Max daily loss (%) to stop trading for the day — KES-based cap is primary
-  maxDailyLossPercent: 2.0,
-
-  // Wait time (minutes) after a STOP LOSS before taking another trade
   lossCooldownMinutes: 15,
-
-  // Max allowed spread (in pips) to prevent entry during high volatility
   maxSpreadPips: 1.5,
-
-  // Minimum ATR (in pips) required to ensure enough price movement for scalping
   minAtrPips: 0.8,
-
-  // ─── Profit Protection ──────────────────────────────────────────────────
-  // Move Stop Loss to Entry (Breakeven) after profit reaches X * ATR
-  useBreakeven: true,
-  breakevenTriggerATR: 1.5, // Activate trailing at 1.5x ATR profit (was 2.0 — trigger sooner)
-
-  // Trailing stop: once breakeven triggers, trail SL at this ATR distance from price
-  useTrailingStop: true,
-  trailingStopATR: 1.0, // Trail 1.0x ATR behind price (was 1.5 — lock in 0.5x ATR minimum)
-
-  // ─── Slippage Protection ───────────────────────────────────────────────
-  // Max slippage in pips for cTrader NewOrderReq
   maxSlippagePips: 2,
 
-  // ─── Connection Health ─────────────────────────────────────────────────
-  // If connection lost for > this many seconds, trigger emergency alert
-  connectionTimeoutSeconds: 10,
+  // ─── Profit Protection ──────────────────────────────────────────────────
+  useBreakeven: true,
+  breakevenTriggerATR: 1.5, 
+  useTrailingStop: true,
+  trailingStopATR: 1.0, 
 
   // ─── Multi-Trade Management ────────────────────────────────────────────
-  // Max concurrent trades allowed for the same pair
   maxConcurrentTrades: 3,
-
-  // Max total trades across ALL pairs combined (1 = single trade globally)
-  maxTotalTrades: 1,
-
-  // Total account risk (%) for all combined trades (e.g. 3 * 1% = 3%)
-  maxTotalRiskPercent: 3.0,
-
-  // Min price distance (in pips) required between new and existing trades
-  // (Prevents "stacking" multiple trades at the exact same entry)
+  maxTotalTrades: 1, // Global cap across all pairs
   minTradeDistancePips: 5,
-
-  // ─── Safety Checks ─────────────────────────────────────────────────────
-  // Minimum SL/TP distance in pips to prevent trades too close to entry
-  // (Protects from spread-outs and noise)
   minStopDistancePips: 2,
-
-  // Minimum SL/TP as a fraction of current ATR (e.g., 0.3 means 30% of ATR)
   atrMultiplierFloor: 0.3,
 
-  // ─── Strategy Settings (Finetuning) ────────────────────────────────────
+  // ─── Strategy Settings ────────────────────────────────────
   strategy: {
-    // ATR Multipliers for targets
-    // 2.5x SL / 4.5x TP is a 1:1.8 RR ratio — trailing stop locks in profits so let TP run
     atrMultiplierSL: 2.5,
     atrMultiplierTP: 4.5,
-
-    // RSI Thresholds (Strict — only trade genuine oversold/overbought)
     rsiThresholdLow:  30,
     rsiThresholdHigh: 70,
-
-    // EMA Periods
     emaFast: 8,
     emaSlow: 21,
-
-    // ADX minimum — filters out choppy/ranging markets (no directional conviction)
-    // 22 is optimal for EUR_USD (keeps 53% of candles, best PF 2.0)
-    minAdx: 22,
-
-    // Volume confirmation — require at least this multiple of avg volume for entries
-    // Set to 0 to disable. 1.0 = average, 1.2 = 20% above average
+    minAdx: 18, // Lowered from 22 to allow more trades
     minVolumeRatio: 1.0,
-
-    // Require MACD line above zero for BUY, below zero for SELL
-    // WARNING: May conflict with pullback strategy (MACD weakens during pullbacks)
-    // Set false for pullback entries, true for pure momentum entries
-    requireMacdBias: false,
-
-    // Minimum confirmation signals required to enter (out of 3: rejection candle, MACD momentum, volume)
-    // 1 = standard (at least one confirmation), 2 = strict, 3 = very strict
     minConfirmations: 1,
-
-    // ─── Phase 2: Market Environment Filters ──────────────────────────────
-    // EMA 200 Trend Filter on H1 chart
     ema200Period: 200,
-
-    // Volatility Filter: ATR(14) must be above 20-day average ATR
-    atrAveragePeriod: 20,   // Days to average ATR for volatility filter
-
-    // ─── Phase 3: Price Action Triggers ───────────────────────────────────
-    // Engulfing / Pin Bar pattern detection for entry confirmation
-    // within 15-minute Support/Resistance zone
+    atrAveragePeriod: 20,   
     usePriceActionTrigger: true,
-    srLookbackPeriods: 50,   // Periods to look back for S/R zone detection
-
-    // AI Sentiment Check: Minimum AI confidence required for trading
-    // (A confidence level above 80% usually indicates strong sentiment alignment)
+    srLookbackPeriods: 50,   
     minSentimentConfidence: 75, 
   },
 
