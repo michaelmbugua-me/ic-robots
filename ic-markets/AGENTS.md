@@ -34,6 +34,7 @@ npm run start         # Monitor-only mode (no trades placed)
 npm run auto          # Auto-execute EUR/USD trades
 npm run backtest      # Backtest with real AI (supports multi-pair: --pair EUR_USD,GBP_USD)
 npm run backtest-mock # Backtest with deterministic mock signal logic (no AI needed)
+npm run analyze       # Generate daily PnL dashboard (trade-analyzer.js → generate-report.js → report.html)
 ```
 
 Backtest also accepts `--provider ollama|anthropic` and `--model MODEL_NAME` to override AI settings from the CLI.
@@ -43,12 +44,13 @@ Pair-specific shortcuts: `npm run gbp`, `npm run gbp-auto`, `npm run jpn`, `npm 
 ## Conventions & Patterns
 
 - **ESM only** — all files use `import/export`, `"type": "module"` in package.json
+- **pnpm** — uses `pnpm` as package manager (`pnpm-lock.yaml`). Dockerfile installs via `pnpm install --frozen-lockfile`
 - **No test framework** — validation is done via backtesting (`backtest.js`)
 - **Candle format** — standardized as `{ time, complete, volume, mid: { o, h, l, c } }` (OANDA-compatible shape) even though data comes from cTrader Protobuf
 - **Pip math** — JPY pairs use `pipSize = 0.01`, all others use `0.0001`. Always check `PAIR.includes("JPY")`
 - **cTrader prices** — raw integers divided by `100000` (5 decimal places). Volume is `units * 100` internally
 - **Symbol IDs** — use `EUR_USD` format (underscore separator) in config; cTrader uses `EURUSD` or `EUR/USD`
-- **State persistence** — `state.json` stores per-pair state as `{ pairStates: { PAIR: { lastSignal, activeTrades } } }` to survive crashes. `loadState()` auto-migrates the old flat `activeTrades` format. `activity.log` is append-only JSONL audit trail
+- **State persistence** — `state.json` stores per-pair state as `{ pairStates: { PAIR: { lastSignal, activeTrades } } }` to survive crashes. `loadState()` auto-migrates the old flat `activeTrades` format. `risk-state.json` persists RiskManager daily P&L across restarts. `activity.log` is append-only JSONL audit trail
 - **AI hallucination guards** — `processSignal()` in `index.js` force-corrects entry/SL/TP prices using ATR if AI returns illogical values
 - **Config is the single source of truth** — all risk params, strategy thresholds, and API credentials flow from `config.js` (backed by `.env`)
 - **Entry confirmation gate** — triggers require at least one of: rejection candle, MACD histogram turning, or above-average volume
@@ -61,6 +63,7 @@ Pair-specific shortcuts: `npm run gbp`, `npm run gbp-auto`, `npm run jpn`, `npm 
 - **cTrader Open API** (`icmarkets.js`): Protobuf binary over WSS port 5035. Uses `.proto` files in project root. Auth is 2-step: app auth → account auth. Heartbeat every 20s required. Note: `get-symbols.js` uses the older JSON protocol on port 5036
 - **Ollama** (`ai.js`): HTTP POST to `localhost:11434/api/chat` with `format: "json"`. Response parsed with aggressive fallback: strip `<think>` tags → try JSON.parse → regex extract `{...}` → default to WAIT
 - **Backtest** (`backtest-multi.js`): Simulates spread, slippage, and IC Markets commissions ($3/side per $100k). Supports multi-pair testing by syncing candles from multiple `history_PAIR.json` files. `--mock` flag bypasses AI entirely with deterministic RSI+BB+MACD logic.
+- **Docker** (`Dockerfile`): Node 20-slim, pnpm install, defaults to monitor mode. Pass `--auto-execute` via container args for live trading. Expects `.env` for credentials.
 
 ## Files to Understand First
 
@@ -74,4 +77,6 @@ Pair-specific shortcuts: `npm run gbp`, `npm run gbp-auto`, `npm run jpn`, `npm 
 | `backtest-multi.js` | Multi-pair backtester with shared balance and commission simulation |
 | `indicators.js` | All indicators: EMA(8/21/200), RSI, ATR, ADX, MACD, BBands, VWAP, engulfing patterns, S/R zones |
 | `formatter.js` | Terminal output formatting for signal alerts and trade results |
+| `trade-analyzer.js` | Daily PnL calendar from `trades_backtest.json` — groups trades by date, calculates win rates |
+| `generate-report.js` | Converts trade data into an interactive HTML dashboard (`report.html`) with equity curve, monthly P&L, outcome donut |
 
