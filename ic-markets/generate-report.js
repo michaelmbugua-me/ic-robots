@@ -1,11 +1,32 @@
 /**
  * Report Generator
- * Converts trade JSON data into a beautiful HTML dashboard.
+ * Converts trade JSON data into a beautiful DARK HTML dashboard (KES Denominated).
  */
 import fs from 'fs';
+import { config } from './config.js';
 
 const FILE_PATH = 'trades_backtest.json';
 const OUTPUT_PATH = 'report.html';
+const KES_RATE = config.risk.usdKesRate || 129.0;
+
+function formatKES(val) {
+  return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: 0 }).format(val);
+}
+
+function formatDatePretty(dateStr) {
+  const date = new Date(dateStr);
+  const day = date.getDate();
+  const month = date.toLocaleString('en-GB', { month: 'short' });
+  const year = date.getFullYear();
+  
+  const j = day % 10, k = day % 100;
+  let suffix = "th";
+  if (j == 1 && k != 11) suffix = "st";
+  if (j == 2 && k != 12) suffix = "nd";
+  if (j == 3 && k != 13) suffix = "rd";
+  
+  return `${day}${suffix} ${month} ${year}`;
+}
 
 function generate() {
   if (!fs.existsSync(FILE_PATH)) {
@@ -21,249 +42,261 @@ function generate() {
     return;
   }
 
-  // Calculate high-level metrics
-  const netProfit = trades.reduce((s, t) => s + t.profit, 0);
-  const winRate = data.winRate;
+  const wins = trades.filter(t => t.profit > 0);
+  const losses = trades.filter(t => t.profit <= 0);
+  const grossProfitKES = wins.reduce((s, t) => s + (t.profit * KES_RATE), 0);
+  const grossLossKES = Math.abs(losses.reduce((s, t) => s + (t.profit * KES_RATE), 0));
+  const netProfitKES = grossProfitKES - grossLossKES;
+  const profitFactor = grossLossKES > 0 ? (grossProfitKES / grossLossKES).toFixed(2) : grossProfitKES.toFixed(2);
+  
   const totalTrades = trades.length;
-  const finalBalance = trades[trades.length - 1].balance;
-  const startBalance = trades[0].balance - trades[0].profit;
-  const roi = ((finalBalance / startBalance - 1) * 100).toFixed(1);
+  const winRate = data.winRate || ((wins.length / totalTrades) * 100).toFixed(1);
+  const avgWinKES = wins.length > 0 ? (grossProfitKES / wins.length) : 0;
+  const avgLossKES = losses.length > 0 ? (grossLossKES / losses.length) : 0;
 
-  const tpTrades = trades.filter(t => t.reason === 'TP');
-  const slFull = trades.filter(t => t.reason === 'SL' && !t.isBreakeven);
-  const avgWin = tpTrades.length > 0 ? (tpTrades.reduce((s,t) => s + t.profit, 0) / tpTrades.length).toFixed(2) : "0.00";
-  const avgLoss = slFull.length > 0 ? (slFull.reduce((s,t) => s + t.profit, 0) / slFull.length).toFixed(2) : "0.00";
+  const finalBalanceKES = trades[trades.length - 1].balance * KES_RATE;
+  const startBalanceKES = (trades[0].balance - trades[0].profit) * KES_RATE;
+  const roi = ((finalBalanceKES / startBalanceKES - 1) * 100).toFixed(2);
 
-  // Build the HTML template
+  let peakKES = startBalanceKES, maxDD = 0;
+  trades.forEach(t => {
+    const balKES = t.balance * KES_RATE;
+    if (balKES > peakKES) peakKES = balKES;
+    const dd = ((peakKES - balKES) / peakKES) * 100;
+    if (dd > maxDD) maxDD = dd;
+  });
+
+  const bestTradeKES = Math.max(...trades.map(t => t.profit * KES_RATE));
+  const worstTradeKES = Math.min(...trades.map(t => t.profit * KES_RATE));
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trading Strategy Dashboard</title>
+<title>Strategy Dashboard (KES) — Dark</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  :root { 
+    --bg: #0f172a; 
+    --card: #1e293b; 
+    --border: #334155;
+    --text: #f8fafc; 
+    --muted: #94a3b8; 
+    --primary: #3b82f6; 
+    --success: #22c55e; 
+    --danger: #ef4444; 
+    --table-hover: #1e293b;
+  }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f3; color: #1a1a1a; padding: 2rem; min-height: 100vh; }
-  h1 { font-size: 20px; font-weight: 500; margin-bottom: 4px; }
-  .subtitle { font-size: 13px; color: #888; margin-bottom: 1.5rem; }
-  .grid-6 { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 1.5rem; }
-  .metric { background: #fff; border: 0.5px solid #e0e0de; border-radius: 10px; padding: 1rem; }
-  .metric-label { font-size: 12px; color: #888; margin-bottom: 4px; }
-  .metric-value { font-size: 22px; font-weight: 500; }
-  .metric-sub { font-size: 11px; color: #888; margin-top: 4px; }
-  .green { color: #3B6D11; }
-  .red { color: #A32D2D; }
-  .section-title { font-size: 11px; font-weight: 500; color: #888; letter-spacing: 0.06em; text-transform: uppercase; margin: 1.5rem 0 0.75rem; }
-  .chart-wrap { background: #fff; border: 0.5px solid #e0e0de; border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
-  .outcome-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-  .donut-wrap { position: relative; width: 150px; height: 150px; flex-shrink: 0; }
-  .donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; pointer-events: none; }
-  .donut-center .val { font-size: 20px; font-weight: 500; }
-  .donut-center .lbl { font-size: 11px; color: #888; }
-  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; }
-  .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
-  .legend-count { margin-left: auto; font-weight: 500; }
-  .legend-sub { color: #888; }
-  .trade-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 0.5px solid #f0f0ee; font-size: 13px; }
-  .badge { font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 500; }
-  .badge-buy { background: #E6F1FB; color: #0C447C; }
-  .badge-sell { background: #FAEEDA; color: #633806; }
-  .badge-tp { background: #EAF3DE; color: #27500A; }
-  .badge-sl { background: #FCEBEB; color: #791F1F; }
-  .badge-be { background: #f0f0ee; color: #666; }
-  .outcome-flex { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
-  @media (max-width: 600px) { body { padding: 1rem; } .grid-6 { grid-template-columns: repeat(2, 1fr); } }
+  body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); padding: 2rem; line-height: 1.5; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  header { margin-bottom: 2.5rem; display: flex; justify-content: space-between; align-items: flex-end; }
+  h1 { font-size: 26px; font-weight: 700; color: #fff; letter-spacing: -0.025em; }
+  .subtitle { font-size: 14px; color: var(--muted); }
+  
+  .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+  .label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
+  .value { font-size: 24px; font-weight: 700; color: #fff; }
+  .sub-value { font-size: 12px; margin-top: 0.4rem; font-weight: 500; }
+  
+  .section-title { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .chart-container { height: 320px; width: 100%; position: relative; margin-bottom: 2.5rem; }
+  
+  table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 13px; color: var(--text); }
+  th { text-align: left; padding: 14px 12px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); background: #1e293b; }
+  td { padding: 14px 12px; border-bottom: 1px solid var(--border); }
+  tr:hover { background: #334155; }
+  
+  .badge { padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .bg-success { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.2); }
+  .bg-danger { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .bg-blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); }
+  .bg-muted { background: rgba(148, 163, 184, 0.1); color: var(--muted); border: 1px solid rgba(148, 163, 184, 0.2); }
+  
+  .flex-row { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-top: 1.5rem; }
+  @media (max-width: 850px) { .flex-row { grid-template-columns: 1fr; } .grid-stats { grid-template-columns: 1fr 1fr; } }
 </style>
 </head>
 <body>
 
-<h1>Strategy Analysis Dashboard</h1>
-<p class="subtitle">${totalTrades} trades &nbsp;·&nbsp; ${trades[0].time.split('T')[0]} to ${trades[trades.length-1].time.split('T')[0]}</p>
+<div class="container">
+  <header>
+    <div>
+      <h1>Trading Performance Terminal</h1>
+      <p class="subtitle">System Analytics: ${formatDatePretty(trades[0].time)} to ${formatDatePretty(trades[trades.length-1].time)}</p>
+    </div>
+    <div class="subtitle" style="text-align: right;">Currency: KES &nbsp; | &nbsp; Rate: ${KES_RATE}</div>
+  </header>
 
-<div class="grid-6">
-  <div class="metric">
-    <div class="metric-label">Net profit</div>
-    <div class="metric-value ${netProfit >= 0 ? 'green' : 'red'}">${netProfit >= 0 ? '+' : ''}$${netProfit.toFixed(2)}</div>
-    <div class="metric-sub">${roi}% ROI</div>
+  <div class="grid-stats">
+    <div class="card">
+      <div class="label">Total Net P&L</div>
+      <div class="value" style="color: ${netProfitKES >= 0 ? 'var(--success)' : 'var(--danger)'}">${netProfitKES >= 0 ? '+' : ''}${formatKES(netProfitKES)}</div>
+      <div class="sub-value" style="color: var(--muted)">Growth: ${roi}% ROI</div>
+    </div>
+    <div class="card">
+      <div class="label">Accuracy</div>
+      <div class="value" style="color: var(--primary)">${winRate}%</div>
+      <div class="sub-value" style="color: var(--muted)">${wins.length} Win / ${losses.length} Loss</div>
+    </div>
+    <div class="card">
+      <div class="label">Efficiency (PF)</div>
+      <div class="value">${profitFactor}</div>
+      <div class="sub-value" style="color: var(--muted)">Max DD: ${maxDD.toFixed(2)}%</div>
+    </div>
+    <div class="card">
+      <div class="label">Portfolio Value</div>
+      <div class="value">${formatKES(finalBalanceKES)}</div>
+      <div class="sub-value" style="color: var(--muted)">Init: ${formatKES(startBalanceKES)}</div>
+    </div>
   </div>
-  <div class="metric">
-    <div class="metric-label">Win rate</div>
-    <div class="metric-value">${winRate}%</div>
-    <div class="metric-sub">${tpTrades.length} full TPs / ${slFull.length} full SLs</div>
-  </div>
-  <div class="metric">
-    <div class="metric-label">Total trades</div>
-    <div class="metric-value">${totalTrades}</div>
-    <div class="metric-sub">Executed signals</div>
-  </div>
-  <div class="metric">
-    <div class="metric-label">Final balance</div>
-    <div class="metric-value">$${finalBalance.toFixed(2)}</div>
-    <div class="metric-sub">Started at $${startBalance.toFixed(0)}</div>
-  </div>
-  <div class="metric">
-    <div class="metric-label">Avg TP win</div>
-    <div class="metric-value green">+$${avgWin}</div>
-    <div class="metric-sub">Full TP hits</div>
-  </div>
-  <div class="metric">
-    <div class="metric-label">Avg full loss</div>
-    <div class="metric-value red">$${avgLoss}</div>
-    <div class="metric-sub">Full SL hits</div>
-  </div>
-</div>
 
-<p class="section-title">Equity curve</p>
-<div class="chart-wrap">
-  <div style="position:relative;width:100%;height:250px;">
-    <canvas id="equityChart"></canvas>
+  <div class="grid-stats">
+    <div class="card">
+      <div class="label">Risk Statistics</div>
+      <div class="value" style="font-size: 18px;"><span style="color: var(--success)">+${formatKES(avgWinKES)}</span> <span style="color:var(--muted);font-size:12px">vs</span> <span style="color: var(--danger)">-${formatKES(avgLossKES)}</span></div>
+      <div class="sub-value" style="color: var(--muted)">Avg. Outcome per Session</div>
+    </div>
+    <div class="card">
+      <div class="label">Peak Deviations</div>
+      <div class="value" style="font-size: 18px;"><span style="color: var(--success)">${formatKES(bestTradeKES)}</span> <span style="color:var(--muted);font-size:12px">/</span> <span style="color: var(--danger)">${formatKES(worstTradeKES)}</span></div>
+      <div class="sub-value" style="color: var(--muted)">Best vs Worst Trade Execution</div>
+    </div>
   </div>
-</div>
 
-<div class="outcome-row">
-  <div>
-    <p class="section-title">Monthly P&amp;L</p>
-    <div class="chart-wrap">
-      <div style="position:relative;width:100%;height:200px;">
+  <div class="card" style="margin-bottom: 1.5rem;">
+    <div class="section-title">EQUITY GROWTH (KES)</div>
+    <div class="chart-container">
+      <canvas id="equityChart"></canvas>
+    </div>
+  </div>
+
+  <div class="flex-row">
+    <div class="card">
+      <div class="section-title">TRANSACTION LOG</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Dir</th>
+            <th>Result</th>
+            <th>Net Profit</th>
+            <th>Account</th>
+          </tr>
+        </thead>
+        <tbody id="tradeTable"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="section-title">PERIODIC PERFORMANCE</div>
+      <div style="height: 250px;">
         <canvas id="monthlyChart"></canvas>
       </div>
     </div>
   </div>
-  <div>
-    <p class="section-title">Outcome breakdown</p>
-    <div class="chart-wrap">
-      <div class="outcome-flex">
-        <div class="donut-wrap">
-          <canvas id="donutChart" style="width:150px;height:150px;"></canvas>
-          <div class="donut-center">
-            <div class="val">${totalTrades}</div>
-            <div class="lbl">trades</div>
-          </div>
-        </div>
-        <div style="flex:1;min-width:180px;" id="outcome-legend"></div>
-      </div>
-    </div>
-  </div>
 </div>
-
-<p class="section-title">Recent trades</p>
-<div class="chart-wrap" id="recent-trades"></div>
 
 <script>
 const trades = ${JSON.stringify(trades)};
+const KES_RATE = ${KES_RATE};
 
-const tpTrades = trades.filter(t => t.reason === 'TP');
-const slFull = trades.filter(t => t.reason === 'SL' && !t.isBreakeven);
-const slBE = trades.filter(t => t.reason === 'SL' && t.isBreakeven);
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
 
-// Equity Chart
+function formatKESJS(val) {
+  return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: 0 }).format(val);
+}
+
+function formatDateJS(dateStr) {
+  const date = new Date(dateStr);
+  const day = date.getDate();
+  const month = date.toLocaleString('en-GB', { month: 'short' });
+  const year = date.getFullYear();
+  const j = day % 10, k = day % 100;
+  let suffix = "th";
+  if (j == 1 && k != 11) suffix = "st";
+  if (j == 2 && k != 12) suffix = "nd";
+  if (j == 3 && k != 13) suffix = "rd";
+  return day + suffix + " " + month + " " + year;
+}
+
+// 1. Equity Chart
 new Chart(document.getElementById('equityChart'), {
   type: 'line',
   data: {
     labels: trades.map((t, i) => i + 1),
     datasets: [{
-      label: 'Balance ($)',
-      data: trades.map(t => parseFloat(t.balance.toFixed(2))),
-      borderColor: '#185FA5',
-      backgroundColor: 'rgba(24,95,165,0.07)',
+      label: 'Balance',
+      data: trades.map(t => t.balance * KES_RATE),
+      borderColor: '#3b82f6',
+      backgroundColor: 'rgba(59, 130, 246, 0.1)',
       borderWidth: 2,
-      pointRadius: 0,
       fill: true,
-      tension: 0.2
+      tension: 0.4,
+      pointRadius: 0,
+      pointHoverRadius: 5
     }]
   },
   options: {
     responsive: true, maintainAspectRatio: false,
     plugins: { legend: { display: false } },
     scales: {
-      x: { ticks: { maxTicksLimit: 20, color: '#999', font: { size: 10 } }, grid: { display: false } },
-      y: { ticks: { color: '#999', font: { size: 11 }, callback: v => '$' + v }, grid: { color: 'rgba(0,0,0,0.05)' } }
+      x: { grid: { display: false } },
+      y: { ticks: { callback: v => 'KSh ' + v.toLocaleString() } }
     }
   }
 });
 
-// Monthly P&L
-const monthMap = {};
+// 2. Monthly P&L
+const months = {};
 trades.forEach(t => {
   const d = new Date(t.exitTime);
-  const key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
-  monthMap[key] = (monthMap[key] || 0) + t.profit;
+  const key = d.toLocaleString('default', { month: 'short' }) + ' ' + d.getFullYear().toString().slice(2);
+  months[key] = (months[key] || 0) + (t.profit * KES_RATE);
 });
-const mKeys = Object.keys(monthMap).sort();
-const mVals = mKeys.map(k => parseFloat(monthMap[k].toFixed(2)));
-const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 new Chart(document.getElementById('monthlyChart'), {
   type: 'bar',
   data: {
-    labels: mKeys.map(k => { const [y,m] = k.split('-'); return months[+m-1] + ' \\'' + y.slice(2); }),
+    labels: Object.keys(months),
     datasets: [{
-      label: 'P&L ($)',
-      data: mVals,
-      backgroundColor: mVals.map(v => v >= 0 ? '#3B6D11' : '#A32D2D'),
-      borderRadius: 4
+      data: Object.values(months),
+      backgroundColor: Object.values(months).map(v => v >= 0 ? '#22c55e' : '#ef4444'),
+      borderRadius: 6
     }]
   },
   options: {
     responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      x: { ticks: { color: '#999', font: { size: 10 } }, grid: { display: false } },
-      y: { ticks: { color: '#999', font: { size: 11 }, callback: v => '$' + v.toFixed(0) }, grid: { color: 'rgba(0,0,0,0.05)' } }
-    }
-  }
-});
-
-// Donut Chart
-new Chart(document.getElementById('donutChart'), {
-  type: 'doughnut',
-  data: {
-    labels: ['TP hit', 'Breakeven SL', 'Full loss'],
-    datasets: [{
-      data: [tpTrades.length, slBE.length, slFull.length],
-      backgroundColor: ['#3B6D11', '#185FA5', '#A32D2D'],
-      borderWidth: 0,
-      hoverOffset: 4
-    }]
-  },
-  options: {
-    responsive: false, cutout: '68%',
     plugins: { legend: { display: false } }
   }
 });
 
-const legendEl = document.getElementById('outcome-legend');
-[
-  { color: '#3B6D11', label: 'TP hit (full win)', count: tpTrades.length },
-  { color: '#185FA5', label: 'Breakeven SL', count: slBE.length },
-  { color: '#A32D2D', label: 'Full SL (loss)', count: slFull.length }
-].forEach(i => {
-  legendEl.innerHTML += \`<div class="legend-item"><span class="legend-dot" style="background:\${i.color}"></span><span class="legend-sub">\${i.label}</span><span class="legend-count">\${i.count}</span></div>\`;
-});
-
-const rt = document.getElementById('recent-trades');
-trades.slice(-15).reverse().forEach(t => {
-  const d = new Date(t.time);
-  const dateStr = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: '2-digit' });
-  const profitColor = t.profit >= 0 ? '#3B6D11' : '#A32D2D';
-  const profitStr = (t.profit >= 0 ? '+' : '') + '$' + t.profit.toFixed(2);
-  rt.innerHTML += \`<div class="trade-row">
-    <span style="color:#999;min-width:85px;font-size:12px;">\${dateStr}</span>
-    <span class="badge badge-\${t.direction.toLowerCase()}">\${t.direction}</span>
-    <span style="flex:1;color:#999;font-size:12px;">\${t.id}</span>
-    <span class="badge badge-\${t.reason.toLowerCase()}">\${t.reason}</span>
-    \${t.isBreakeven && t.reason === 'SL' ? '<span class="badge badge-be">BE</span>' : '<span style="width:28px;display:inline-block;"></span>'}
-    <span style="font-weight:500;color:\${profitColor};min-width:70px;text-align:right;">\${profitStr}</span>
-  </div>\`;
+// 3. Trade Table
+const table = document.getElementById('tradeTable');
+trades.slice().reverse().forEach(t => {
+  const row = table.insertRow();
+  const dateStr = formatDateJS(t.exitTime);
+  const typeClass = t.direction === 'BUY' ? 'bg-blue' : 'bg-danger';
+  const profitKES = t.profit * KES_RATE;
+  const profitColor = profitKES >= 0 ? '#4ade80' : '#f87171';
+  
+  row.innerHTML = \`
+    <td style="white-space: nowrap; color: var(--muted); font-size: 12px;">\${dateStr}</td>
+    <td><span class="badge \${typeClass}">\${t.direction}</span></td>
+    <td><span class="badge bg-muted">\${t.reason} \${t.isBreakeven ? 'BE' : ''}</span></td>
+    <td style="color: \${profitColor}; font-weight: 600;">\${profitKES >= 0 ? '+' : ''}\${formatKESJS(profitKES)}</td>
+    <td style="font-weight: 500;">\${formatKESJS(t.balance * KES_RATE)}</td>
+  \`;
 });
 </script>
 </body>
 </html>`;
 
   fs.writeFileSync(OUTPUT_PATH, html);
-  console.log(`\n✨ Dashboard report generated successfully: ${OUTPUT_PATH}`);
-  console.log(`🔗 Open this file in your browser to view the analysis.`);
+  console.log(`\n✨ Dark Mode KES Dashboard generated: ${OUTPUT_PATH}`);
 }
 
 generate();
