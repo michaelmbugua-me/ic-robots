@@ -86,7 +86,10 @@ function handleSignal(pair, signal, ask, bid, time, indicators) {
     p.activeTrades = p.activeTrades.filter(t => t.direction !== opposite);
   }
 
-  if (p.activeTrades.length < config.maxConcurrentTrades) {
+  // Check global max trades across all pairs
+  const totalGlobalTrades = Object.values(pairData).reduce((acc, pair) => acc + pair.activeTrades.length, 0);
+
+  if (p.activeTrades.length < (config.maxConcurrentTrades || 1) && totalGlobalTrades < (config.maxTotalTrades || 1)) {
     const units = calculateUnits(pair, signal, indicators, balance);
     if (units > 0) {
       const slippage = (config.backtest.slippagePips || 0) * p.pipSize;
@@ -383,23 +386,24 @@ async function main() {
               action = "WAIT";
             } else {
               // ─── PULLBACK STRATEGY (EUR_USD, default) ───
-              const isOverbought = indicators.rsi > rsiThresholdHigh && midOpen > (indicators.bbands.upper - (1.0 * indicators.atr));
-              const isOversold   = indicators.rsi < rsiThresholdLow  && midOpen < (indicators.bbands.lower + (1.0 * indicators.atr));
+              // Restored high WR thresholds for mock backtest
+              const isOverbought = indicators.rsi > rsiThresholdHigh && midOpen > (indicators.bbands.upper - (0.5 * indicators.atr));
+              const isOversold   = indicators.rsi < rsiThresholdLow  && midOpen < (indicators.bbands.lower + (0.5 * indicators.atr));
 
               const vwapBuyBias  = indicators.vwap ? midOpen < indicators.vwap : true;
               const vwapSellBias = indicators.vwap ? midOpen > indicators.vwap : true;
 
-              let buyConfirmCount = 0;
-              if (indicators.isBullishRejection) buyConfirmCount++;
-              if (macdTurningBullish) buyConfirmCount++;
-              if (indicators.volumeRatio >= minVolRatio) buyConfirmCount++;
-              const hasBuyConfirmation = buyConfirmCount >= minConfirmations;
+              let buyConf = 0;
+              if (macdTurningBullish) buyConf++;
+              if (indicators.isBullishRejection) buyConf++;
+              if (indicators.volumeRatio >= minVolRatio) buyConf++;
+              const hasBuyConfirmation = buyConf >= minConfirmations;
 
-              let sellConfirmCount = 0;
-              if (indicators.isBearishRejection) sellConfirmCount++;
-              if (macdTurningBearish) sellConfirmCount++;
-              if (indicators.volumeRatio >= minVolRatio) sellConfirmCount++;
-              const hasSellConfirmation = sellConfirmCount >= minConfirmations;
+              let sellConf = 0;
+              if (macdTurningBearish) sellConf++;
+              if (indicators.isBearishRejection) sellConf++;
+              if (indicators.volumeRatio >= minVolRatio) sellConf++;
+              const hasSellConfirmation = sellConf >= minConfirmations;
 
               action = (isOversold  && !isSharpDrop && hasBuyConfirmation && vwapBuyBias  && possibleActions.includes("BUY"))  ? "BUY" :
                        (isOverbought && !isSharpRise && hasSellConfirmation && vwapSellBias && possibleActions.includes("SELL")) ? "SELL" : "WAIT";
@@ -409,7 +413,7 @@ async function main() {
                 const isBuy = action === "BUY";
                 const hasPAConfirm = isBuy ? indicators.hasBullishPriceAction : indicators.hasBearishPriceAction;
                 if (!hasPAConfirm) {
-                    // Optional logging
+                    action = "WAIT";
                 }
               }
             }

@@ -23,9 +23,9 @@ export function calculateIndicators(candles) {
   // EMA 200 — Phase 2 Trend Filter
   const ema200Value = ema(closes, config.strategy?.ema200Period || 200);
   
-  // Calculate EMA Slope (Change over last 3 candles for stability)
-  const prevEmaF = ema(closes.slice(0, -3), emaFast);
-  const emaSlope = prevEmaF !== null ? (emaF - prevEmaF) / 3 : 0;
+  // Calculate EMA Slope (Change over last 1 candle for fast reaction, but check 3 for trend)
+  const prevEmaF = ema(closes.slice(0, -1), emaFast);
+  const emaSlope = prevEmaF !== null ? (emaF - prevEmaF) : 0;
 
   // Wick/Body Analysis for Rejection
   const lastCandle = candles[candles.length - 1];
@@ -39,8 +39,8 @@ export function calculateIndicators(candles) {
 
   // Rejection candle detection (pin bar / hammer)
   const minBody = body || 0.000001; 
-  const isBullishRejection = lowerWick > minBody * 1.2 && lowerWick > upperWick * 1.2;
-  const isBearishRejection = upperWick > minBody * 1.2 && upperWick > lowerWick * 1.2;
+  const isBullishRejection = lowerWick > minBody * 1.5 && lowerWick > upperWick * 1.5;
+  const isBearishRejection = upperWick > minBody * 1.5 && upperWick > lowerWick * 1.5;
 
   // ─── Phase 3: Price Action Patterns ──────────────────────────────────────
   // Bullish Engulfing: previous candle bearish, current candle bullish and fully engulfs previous

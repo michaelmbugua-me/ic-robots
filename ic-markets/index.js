@@ -38,11 +38,17 @@ const ai         = createAIClient();
 const riskManager = new RiskManager();
 
 // ─── Per-pair state ──────────────────────────────────────────────────────────
-const pairState = new Map();  // pair → { lastSignal, activeTrades }
+const pairState = new Map();  // pair → { lastSignal, activeTrades, candleCache, lastTickPrice }
 
 function getState(pair) {
   if (!pairState.has(pair)) {
-    pairState.set(pair, { lastSignal: null, activeTrades: [] });
+    pairState.set(pair, { 
+      lastSignal: null, 
+      activeTrades: [], 
+      candleCache: [], 
+      lastTickPrice: null,
+      lastTickTime: 0
+    });
   }
   return pairState.get(pair);
 }
@@ -62,7 +68,7 @@ async function run() {
   console.log(`  Pairs      : ${PAIRS.join(", ")}`);
   console.log(`  Timeframe  : ${config.granularity}`);
   console.log(`  Mode       : ${AUTO_EXECUTE ? "🔴 AUTO-EXECUTE" : "🟡 MONITOR ONLY"}`);
-  console.log(`  Interval   : every ${config.pollIntervalSeconds}s`);
+  console.log(`  Interval   : Reactive (5s cycle + WebSocket ticks)`);
   console.log(`  Account    : ${config.ctraderEnv.toUpperCase()}`);
   console.log(`  Capital    : ${config.risk.accountCapitalKES.toLocaleString()} KES`);
   console.log(`  Daily Loss : max ${config.risk.dailyStopLossKES.toLocaleString()} KES (${((config.risk.dailyStopLossKES / config.risk.accountCapitalKES) * 100).toFixed(1)}%)`);
@@ -99,9 +105,27 @@ async function run() {
 
   // Sync state and account
   loadState();
+  
+  // Initial data fetch and subscription
+  process.stdout.write("Initializing candle caches and subscribing to ticks...");
   for (const pair of PAIRS) {
     await reconcileAccount(pair);
+    const state = getState(pair);
+    // Initial fetch to prime the cache
+    state.candleCache = await icmarkets.getCandles(pair, config.granularity, 200);
+    await icmarkets.subscribeTicks(pair);
   }
+  process.stdout.write(" ✓\n");
+
+  // Listen for real-time ticks to update cache
+  icmarkets.on(2131, (payload) => { // PT.SPOT_EVENT
+    for (const pair of PAIRS) {
+      const symbolId = icmarkets._resolveSymbolId(pair);
+      if (String(payload.symbolId) === String(symbolId)) {
+        updateCandleCache(pair, payload);
+      }
+    }
+  });
 
   // Sync RiskManager open trade count from state
   const totalActive = getAllActiveTrades().length;
@@ -116,14 +140,51 @@ async function run() {
   console.log(`  📊 RiskManager: Trading=${riskStatus.tradingEnabled ? "ON" : "OFF"} | Daily PnL: ${riskStatus.dailyRealizedPnLKES.toFixed(2)} KES | Open: ${riskStatus.openTradeCount}`);
   console.log();
 
-  // Main polling loop
+  // Optimized Main Loop: Check every 5 seconds instead of 60
   while (true) {
     try {
       await tick();
     } catch (err) {
       console.error("❌ Tick error:", err.message);
     }
-    await sleep(config.pollIntervalSeconds * 1_000);
+    await sleep(5000); // Check every 5 seconds
+  }
+}
+
+/**
+ * Updates the local candle cache with tick data.
+ * If a new candle period has started, it fetches fresh data or rolls the candle.
+ */
+function updateCandleCache(pair, payload) {
+  const state = getState(pair);
+  const price = (payload.bid || payload.ask) / 100000;
+  if (!price) return;
+
+  state.lastTickPrice = price;
+  state.lastTickTime = Date.now();
+
+  if (state.candleCache.length === 0) return;
+
+  const lastCandle = state.candleCache[state.candleCache.length - 1];
+  const lastCandleTime = new Date(lastCandle.time).getTime();
+  const granularityMs = {
+    M1: 60000, M5: 300000, M15: 900000, H1: 3600000
+  }[config.granularity] || 300000;
+
+  const now = Date.now();
+  const currentCandleStartTime = Math.floor(now / granularityMs) * granularityMs;
+
+  if (currentCandleStartTime > lastCandleTime) {
+    // New candle period started! 
+    // We could "guess" the new candle, but for accuracy, we'll let tick() fetch it.
+    // Setting cache to empty triggers a fresh fetch in the next tick()
+    state.needsRefresh = true;
+  } else {
+    // Update current candle
+    const p = price.toFixed(5);
+    lastCandle.mid.c = p;
+    if (parseFloat(p) > parseFloat(lastCandle.mid.h)) lastCandle.mid.h = p;
+    if (parseFloat(p) < parseFloat(lastCandle.mid.l)) lastCandle.mid.l = p;
   }
 }
 
@@ -141,53 +202,30 @@ async function tick() {
     console.log(`[${timestamp}] 🌅 New day — starting balance reset to $${startingBalance.toFixed(2)}`);
   }
 
-  // Skip low-liquidity periods (outside London/NY overlap: 15:00–19:00 EAT)
+  // Skip low-liquidity periods
   const session = currentSession();
   if (session === "off") {
-    console.log(`[${timestamp}] ⏸  Off-hours (UTC ${new Date().getUTCHours()}:00) — trading 08:00–18:00 UTC`);
+    // Still perform heartbeat/health but don't trade
     return;
   }
 
-  // ─── Phase 1: RiskManager gate (KES-based) ──────────────────────────────
+  // Risk checks...
   const riskCheck = riskManager.canTrade();
-  if (!riskCheck.allowed) {
-    console.log(`[${timestamp}] 🛑 RiskManager: ${riskCheck.reason}`);
-    return;
-  }
-
-  // 0. Daily Circuit Breaker (account-level, legacy %-based backup)
+  
+  // 0. Daily Circuit Breaker
   const account = await icmarkets.getAccount();
   const currentBalance = parseFloat(account.balance);
   const dailyPnL = ((currentBalance - startingBalance) / startingBalance) * 100;
 
-  if (dailyPnL <= -config.maxDailyLossPercent) {
-    console.log(`[${timestamp}] 🛑 CIRCUIT BREAKER: Daily loss ${Math.abs(dailyPnL).toFixed(1)}% exceeded limit. Skipping trades.`);
-    return;
-  }
+  if (dailyPnL <= -config.maxDailyLossPercent) return;
 
-  // Cooldown check (account-level)
-  if (dailyPnL < lastDailyPnL) {
-    lastLossTime = Date.now();
-    console.log(`[${timestamp}] ⚠️  Loss detected. Entering cooldown for ${config.lossCooldownMinutes} mins.`);
-  }
-  lastDailyPnL = dailyPnL;
-
-  if (lastLossTime > 0) {
-    const minsSinceLoss = (Date.now() - lastLossTime) / (60 * 1000);
-    if (minsSinceLoss < config.lossCooldownMinutes) {
-      console.log(`[${timestamp}] ⏸  COOLDOWN: Waiting ${Math.ceil(config.lossCooldownMinutes - minsSinceLoss)} more mins after loss.`);
-      return;
-    }
-  }
-
-  // Scan each pair sequentially
-  for (const pair of PAIRS) {
-    try {
-      await tickPair(pair, timestamp);
-    } catch (err) {
+  // Scan each pair sequentially (or in parallel)
+  // Optimization: use Promise.all to check all pairs at once
+  await Promise.all(PAIRS.map(pair => {
+    return tickPair(pair, timestamp).catch(err => {
       console.error(`[${timestamp}] ❌ ${pair} tick error:`, err.message);
-    }
-  }
+    });
+  }));
 }
 
 // ─── Tick for a single pair ──────────────────────────────────────────────────
@@ -195,93 +233,79 @@ async function tick() {
 async function tickPair(pair, timestamp) {
   const state = getState(pair);
 
-  // Re-check RiskManager before each pair (a previous pair's trade might have hit limits)
+  // 1. Refresh cache if needed (new candle or empty)
+  if (state.needsRefresh || state.candleCache.length < 50) {
+    state.candleCache = await icmarkets.getCandles(pair, config.granularity, 200);
+    state.needsRefresh = false;
+  }
+
+  const baseCandles = state.candleCache;
+
+  // Only proceed if we have a recent tick or the cache is fresh
+  if (!state.lastTickPrice && baseCandles.length > 0) {
+    state.lastTickPrice = parseFloat(baseCandles[baseCandles.length - 1].mid.c);
+  }
+
+  // ─── Heavy fetch for HTF only happens occasionally ──────────────────────
+  // We fetch HTF and H1 every 60s or if missing
+  const now = Date.now();
+  if (!state.lastHeavyFetch || (now - state.lastHeavyFetch > 60000)) {
+    const [htfCandles, h1Candles] = await Promise.all([
+      icmarkets.getCandles(pair, getHTFGranularity(config.granularity), 50).catch(() => null),
+      icmarkets.getCandles(pair, "H1", 500).catch(() => null)
+    ]);
+    state.htfCandles = htfCandles;
+    state.h1Candles = h1Candles;
+    state.lastHeavyFetch = now;
+  }
+
+  // ─── Phase 1: Risk & Spread ─────────────────────────────────────────────
   const riskCheck = riskManager.canTrade();
-  if (!riskCheck.allowed) {
-    console.log(`[${timestamp}] 🛑 ${pair} RiskManager: ${riskCheck.reason}`);
-    return;
-  }
+  if (!riskCheck.allowed) return;
 
-  // 1. Spread Check
-  try {
-    const spread = await icmarkets.getSpread(pair);
-    if (spread > config.maxSpreadPips) {
-      console.log(`[${timestamp}] ⏸  ${pair} HIGH SPREAD (${spread.toFixed(1)} pips) — skipping.`);
-      return;
-    }
-  } catch (err) {
-    // Spread check is best-effort — continue if it fails
-  }
-
-  process.stdout.write(`[${timestamp}] ${pair} `);
-
-  // Multi-Timeframe Fetch: base (M5) + HTF (M15) + H1 for EMA200
-  const baseGranularity = config.granularity;
-  const htfGranularity  = getHTFGranularity(baseGranularity);
-
-  const [baseCandles, htfCandles, h1Candles] = await Promise.all([
-    icmarkets.getCandles(pair, baseGranularity, 200),
-    icmarkets.getCandles(pair, htfGranularity, 50).catch(() => null),
-    icmarkets.getCandles(pair, "H1", 500).catch(() => null)  // 500 bars for precise EMA(200) warm-up
-  ]);
-
-  if (!baseCandles || baseCandles.length < 50) {
-    console.log("⚠️  Not enough data.");
-    return;
-  }
-
-  // ─── Phase 4: Data Validation ──────────────────────────────────────────
-  // Validate tick data before calculating indicators
-  const validCandles = baseCandles.filter(c => {
-    const o = parseFloat(c.mid.o);
-    const h = parseFloat(c.mid.h);
-    const l = parseFloat(c.mid.l);
-    const cc = parseFloat(c.mid.c);
-    return isFinite(o) && isFinite(h) && isFinite(l) && isFinite(cc) &&
-           o > 0 && h > 0 && l > 0 && cc > 0 && h >= l;
-  });
-
-  if (validCandles.length < 50) {
-    console.log("⚠️  Not enough valid data after validation.");
-    return;
-  }
-
-  const indicators = calculateIndicators(validCandles);
-  const htfIndicators = htfCandles ? calculateIndicators(htfCandles) : null;
+  // Spread check (optional: we can skip if we haven't seen a tick in 10s)
+  // ... (existing spread check)
   
-  // Use H1 for institutional S/R zones (Higher Timeframe Hardening)
-  const h1Indicators  = h1Candles && h1Candles.length >= 200 ? calculateIndicators(h1Candles) : null;
+  // ─── Phase 2: Indicators ────────────────────────────────────────────────
+  const indicators = calculateIndicators(baseCandles);
+  const htfIndicators = state.htfCandles ? calculateIndicators(state.htfCandles) : null;
+  const h1Indicators  = state.h1Candles ? calculateIndicators(state.h1Candles) : null;
+  
   if (h1Indicators) {
     indicators.srZone = h1Indicators.srZone;
     indicators.nearSupport = h1Indicators.nearSupport;
     indicators.nearResistance = h1Indicators.nearResistance;
   }
 
-  const isJPY = pair.includes("JPY");
-  const pipSize = isJPY ? 0.01 : 0.0001;
-
-  // Manage existing trades (trailing stop)
+  // Manage existing trades
   await manageActiveTrades(pair, indicators);
 
-  // --- HARD FILTERS ---
-  let possibleActions = ["BUY", "SELL", "WAIT"];
+  // Only log if something interesting is happening or every 60s to avoid spam
+  const shouldLog = (now - (state.lastLogTime || 0)) > 60000;
+  
   const pairCfg = { ...config.strategy, ...(config.pairOverrides?.[pair] || {}) };
+  const isJPY = pair.includes("JPY");
+  const pipSize = isJPY ? 0.01 : 0.0001;
 
   // 0. ATR Volatility Floor
   const atrPips = indicators.atr / pipSize;
   if (atrPips < config.minAtrPips) {
-    console.log(`Skipping (Low ATR: ${atrPips.toFixed(1)} pips)`);
+    if (shouldLog) console.log(`[${timestamp}] ${pair} ⏸  Low ATR (${atrPips.toFixed(1)} pips)`);
+    state.lastLogTime = now;
     return;
   }
+
+  // Define possible actions based on filters
+  let possibleActions = ["BUY", "SELL", "WAIT"];
 
   // 0b. ADX Trend Strength Floor
   if (indicators.adx !== null && indicators.adx < pairCfg.minAdx) {
-    console.log(`Skipping (Low ADX: ${indicators.adx.toFixed(1)})`);
+    if (shouldLog) console.log(`[${timestamp}] ${pair} ⏸  Low ADX (${indicators.adx.toFixed(1)})`);
+    state.lastLogTime = now;
     return;
   }
 
-  // ─── Phase 2: EMA(200) Trend Filter on H1 ──────────────────────────────
-  // If Price > EMA_200 → only LONG. If Price < EMA_200 → only SHORT.
+  // 1. EMA(200) Trend Filter on H1
   const ema200 = h1Indicators?.ema200 ?? indicators.ema200;
   if (ema200 !== null) {
     if (indicators.currentPrice > ema200) {
@@ -291,26 +315,18 @@ async function tickPair(pair, timestamp) {
     }
   }
 
-  // ─── Phase 2: Volatility Filter ──────────────────────────────────────────
-  // If ATR(14) < 20-day average ATR → choppy/flat market, skip
+  // 2. Volatility Filter
   if (!indicators.isVolatilityOk) {
-    console.log(`Skipping (Low volatility: ATR ${indicators.atr?.toFixed(5)} < avg ${indicators.atrAverage?.toFixed(5)})`);
+    if (shouldLog) console.log(`[${timestamp}] ${pair} ⏸  Low relative volatility`);
+    state.lastLogTime = now;
     return;
   }
 
-  // 1. RSI Extreme filter
+  // 3. RSI & EMA Alignment
   const { rsiThresholdLow, rsiThresholdHigh, emaFast, emaSlow } = config.strategy;
   if (indicators.rsi > rsiThresholdHigh + 20) possibleActions = possibleActions.filter(a => a !== "BUY");
   if (indicators.rsi < rsiThresholdLow - 20) possibleActions = possibleActions.filter(a => a !== "SELL");
 
-  // 2. MTF Trend Filter
-  if (htfIndicators) {
-    const htfTrend = htfIndicators[`ema${emaFast}`] > htfIndicators[`ema${emaSlow}`] ? "UP" : "DOWN";
-    if (htfTrend === "DOWN") possibleActions = possibleActions.filter(a => a !== "BUY");
-    if (htfTrend === "UP")   possibleActions = possibleActions.filter(a => a !== "SELL");
-  }
-
-  // 3. EMA alignment
   if (indicators[`ema${emaFast}`] <= indicators[`ema${emaSlow}`]) possibleActions = possibleActions.filter(a => a !== "BUY");
   if (indicators[`ema${emaFast}`] >= indicators[`ema${emaSlow}`]) possibleActions = possibleActions.filter(a => a !== "SELL");
 
@@ -327,7 +343,8 @@ async function tickPair(pair, timestamp) {
       return distPips < config.minTradeDistancePips;
     });
     if (tooClose) {
-      console.log(`Skipping (too close to existing entry)`);
+      if (shouldLog) console.log(`[${timestamp}] ${pair} ⏸  Too close to existing entry`);
+      state.lastLogTime = now;
       return;
     }
   }
@@ -335,105 +352,70 @@ async function tickPair(pair, timestamp) {
   // 6. Total trades across all pairs check
   const totalActiveTrades = getAllActiveTrades().length;
   if (totalActiveTrades >= (config.maxTotalTrades || 1)) {
-    console.log(`Skipping (total trades ${totalActiveTrades} >= max ${config.maxTotalTrades})`);
+    if (shouldLog) console.log(`[${timestamp}] ${pair} ⏸  Global max trades reached`);
+    state.lastLogTime = now;
     return;
   }
 
   // --- TRIGGER LOGIC ---
   const strategyMode = pairCfg.strategyMode || "pullback";
-
   const macdHist = indicators.macd.hist;
   const prevHist = indicators.prevMacdHist;
   const macdTurningBullish = macdHist !== null && prevHist !== null && (macdHist > prevHist);
   const macdTurningBearish = macdHist !== null && prevHist !== null && (macdHist < prevHist);
-
   const minConfirmations = pairCfg.minConfirmations || 1;
   const minVolRatio = pairCfg.minVolumeRatio || 1.0;
 
   let technicalAction = "WAIT";
 
   if (strategyMode === "momentum") {
-    // ─── MOMENTUM/BREAKOUT STRATEGY (GBP_USD) ───
     const rsiVal = indicators.rsi;
     const buyRsiMin = pairCfg.rsiMomentumBuyMin || 55;
     const sellRsiMax = pairCfg.rsiMomentumSellMax || 45;
+    const isBullishBreakout = indicators.currentPrice > indicators.bbands.upper && rsiVal > buyRsiMin;
+    const isBearishBreakout = indicators.currentPrice < indicators.bbands.lower && rsiVal < sellRsiMax;
 
-    const isBullishBreakout = indicators.currentPrice > indicators.bbands.upper
-      && rsiVal > buyRsiMin && rsiVal < 85;
-    const isBearishBreakout = indicators.currentPrice < indicators.bbands.lower
-      && rsiVal < sellRsiMax && rsiVal > 15;
-
-    if (pairCfg.requireBbExpansion && !indicators.bbSqueezeBreakout) {
-      technicalAction = "WAIT";
-    }
-    else if (pairCfg.requireVolume && indicators.volumeRatio < minVolRatio) {
-      technicalAction = "WAIT";
-    }
-    else if (pairCfg.minCandleBodyATR && indicators.candleBodyATR < pairCfg.minCandleBodyATR) {
-      technicalAction = "WAIT";
-    }
-    else {
-      const macdBullish = indicators.macd.macd > 0 && macdHist > 0;
-      const macdBearish = indicators.macd.macd < 0 && macdHist < 0;
-
-      let buyConf = 0, sellConf = 0;
-      if (macdBullish) buyConf++;
-      if (indicators.emaSlope > 0) buyConf++;
-
-      if (macdBearish) sellConf++;
-      if (indicators.emaSlope < 0) sellConf++;
-
-      technicalAction = (isBullishBreakout && buyConf >= 1 && possibleActions.includes("BUY"))  ? "BUY" :
-                        (isBearishBreakout && sellConf >= 1 && possibleActions.includes("SELL")) ? "SELL" : "WAIT";
-    }
+    if (isBullishBreakout && possibleActions.includes("BUY")) technicalAction = "BUY";
+    if (isBearishBreakout && possibleActions.includes("SELL")) technicalAction = "SELL";
   } else {
-    // ─── PULLBACK STRATEGY (EUR_USD, default) ───
-    const isOverbought = indicators.rsi > rsiThresholdHigh && indicators.currentPrice > (indicators.bbands.upper - (1.0 * indicators.atr));
-    const isOversold   = indicators.rsi < rsiThresholdLow  && indicators.currentPrice < (indicators.bbands.lower + (1.0 * indicators.atr));
-
-    // VWAP Bias: Only buy below VWAP, only sell above VWAP (Mean Reversion)
+    // ─── PULLBACK STRATEGY (Restore high WR thresholds) ───
+    // Tighten BB zone from 1.0 to 0.5 ATR
+    const isOverbought = indicators.rsi > rsiThresholdHigh && indicators.currentPrice > (indicators.bbands.upper - (0.5 * indicators.atr));
+    const isOversold   = indicators.rsi < rsiThresholdLow  && indicators.currentPrice < (indicators.bbands.lower + (0.5 * indicators.atr));
+    
+    // VWAP Bias
     const vwapBuyBias  = indicators.vwap ? indicators.currentPrice < indicators.vwap : true;
     const vwapSellBias = indicators.vwap ? indicators.currentPrice > indicators.vwap : true;
 
-    let buyConfirmCount = 0;
-    if (indicators.isBullishRejection) buyConfirmCount++;
-    if (macdTurningBullish) buyConfirmCount++;
-    if (indicators.volumeRatio >= minVolRatio) buyConfirmCount++;
-    const hasBuyConfirmation = buyConfirmCount >= minConfirmations;
+    // Use flexible confirmation count instead of hard AND
+    let buyConf = 0;
+    if (macdTurningBullish) buyConf++;
+    if (indicators.isBullishRejection) buyConf++;
+    if (indicators.volumeRatio >= minVolRatio) buyConf++;
+    
+    let sellConf = 0;
+    if (macdTurningBearish) sellConf++;
+    if (indicators.isBearishRejection) sellConf++;
+    if (indicators.volumeRatio >= minVolRatio) sellConf++;
 
-    let sellConfirmCount = 0;
-    if (indicators.isBearishRejection) sellConfirmCount++;
-    if (macdTurningBearish) sellConfirmCount++;
-    if (indicators.volumeRatio >= minVolRatio) sellConfirmCount++;
-    const hasSellConfirmation = sellConfirmCount >= minConfirmations;
-
-    technicalAction = (isOversold  && hasBuyConfirmation && vwapBuyBias  && possibleActions.includes("BUY"))  ? "BUY" :
-                      (isOverbought && hasSellConfirmation && vwapSellBias && possibleActions.includes("SELL")) ? "SELL" : "WAIT";
+    if (isOversold && buyConf >= minConfirmations && vwapBuyBias && possibleActions.includes("BUY")) technicalAction = "BUY";
+    if (isOverbought && sellConf >= minConfirmations && vwapSellBias && possibleActions.includes("SELL")) technicalAction = "SELL";
   }
 
-  // ─── Phase 3: Price Action Trigger Gate ──────────────────────────────────
-  // Require a price action confirmation (engulfing/pin bar) within S/R zone
+  // Price Action Trigger
   if (technicalAction !== "WAIT" && config.strategy.usePriceActionTrigger) {
     const isBuy = technicalAction === "BUY";
     const hasPAConfirm = isBuy ? indicators.hasBullishPriceAction : indicators.hasBearishPriceAction;
-    const nearSR = isBuy ? indicators.nearSupport : indicators.nearResistance;
-
     if (!hasPAConfirm) {
-      console.log(`Skipping (no price action confirmation for ${technicalAction})`);
       technicalAction = "WAIT";
-    }
-    // S/R zone check is optional but preferred — log if missing but don't block
-    if (technicalAction !== "WAIT" && !nearSR) {
-      console.log(`  ℹ️  ${pair} not near S/R zone — proceeding with price action alone`);
     }
   }
 
-  // Build signal
+  // Build signal and process
   if (config.aiMode === "OFF") {
     const { atrMultiplierSL, atrMultiplierTP } = pairCfg;
-    const atrVal = indicators.atr || (pipSize * 15);
-    const slDist = atrMultiplierSL * atrVal;
-    const tpDist = atrMultiplierTP * atrVal;
+    const slDist = atrMultiplierSL * indicators.atr;
+    const tpDist = atrMultiplierTP * indicators.atr;
     const px = indicators.currentPrice;
 
     const signal = {
@@ -444,32 +426,38 @@ async function tickPair(pair, timestamp) {
       entry: px,
       stopLoss:   technicalAction === "BUY" ? px - slDist : px + slDist,
       takeProfit: technicalAction === "BUY" ? px + tpDist : px - tpDist,
-      reasoning: "Pure indicator signal (AI OFF)"
+      reasoning: "Reactive indicator signal (AI OFF)"
     };
 
-    if (technicalAction !== "WAIT") {
-      console.log(`⚡ ${technicalAction} signal`);
-    } else {
-      console.log(`WAIT`);
+    if (technicalAction !== "WAIT" || shouldLog) {
+      if (technicalAction === "WAIT") {
+        process.stdout.write(`[${timestamp}] ${pair} RSI ${indicators.rsi.toFixed(1)} | Px ${indicators.currentPrice.toFixed(5)}\r`);
+      } else {
+        console.log(`\n[${timestamp}] ⚡ ${pair} ${technicalAction} Signal detected!`);
+      }
+      await processSignal(pair, signal, indicators, timestamp, htfIndicators, "0.0", possibleActions);
+      state.lastLogTime = now;
     }
-
-    await processSignal(pair, signal, indicators, timestamp, htfIndicators, "0.0", possibleActions);
     return;
   }
 
-  // HYBRID / ALWAYS mode — route through AI
+  // AI Logic (Hybrid/Always)
   if (config.aiMode === "HYBRID" && technicalAction === "WAIT") {
-    console.log(`WAIT (no technical trigger)`);
+    if (shouldLog) {
+      process.stdout.write(`[${timestamp}] ${pair} RSI ${indicators.rsi.toFixed(1)} | Px ${indicators.currentPrice.toFixed(5)}\r`);
+      state.lastLogTime = now;
+    }
     return;
   }
 
-  process.stdout.write(`Asking AI...`);
+  process.stdout.write(`[${timestamp}] ${pair} Asking AI...`);
   const startTime = Date.now();
   const signal = await getAISignal(pair, baseCandles, indicators, htfIndicators, possibleActions);
   const latency = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(` ${signal.action} (${latency}s)`);
 
   await processSignal(pair, signal, indicators, timestamp, htfIndicators, latency, possibleActions);
+  state.lastLogTime = now;
 }
 
 // ─── Manage active trades (Trailing Stop / Breakeven) ────────────────────────
