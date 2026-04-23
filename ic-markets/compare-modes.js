@@ -9,12 +9,20 @@ const SNAPSHOT_PREFIX = "mode_compare";
 
 const MODES = [
   { key: "ny_only", label: "NY Only (12:30-16:00 UTC)" },
+  {
+    key: "ny_quality",
+    label: "NY Quality (EMA sep >= 0.5)",
+    env: {
+      SESSION_WINDOW_MODE: "ny_quality",
+      EMA_SEPARATION_MIN_PIPS: "0.5",
+    },
+  },
   { key: "ny_trimmed", label: "NY Trimmed (12:45-15:45 UTC)" },
   { key: "all_windows", label: "All Windows (London + NY)" },
 ];
 
-function runBacktestForMode(modeKey) {
-  const env = { ...process.env, SESSION_WINDOW_MODE: modeKey };
+function runBacktestForMode(modeKey, modeEnv = {}) {
+  const env = { ...process.env, SESSION_WINDOW_MODE: modeKey, ...modeEnv };
   execSync("node backtest-multi.js", {
     env,
     stdio: "pipe",
@@ -116,7 +124,7 @@ function main() {
   console.log("\nMODE COMPARISON: 5-10-20 EMA Session Windows");
   console.log("Running backtest for each mode...\n");
 
-  const results = MODES.map(m => ({ ...m, stats: runBacktestForMode(m.key) }));
+  const results = MODES.map(m => ({ ...m, stats: runBacktestForMode(m.key, m.env) }));
 
   console.log("Mode                           Trades  Win%   PF     Exp/Trade  Net($)   EndBal   ROI%   MaxDD%");
   console.log("-------------------------------------------------------------------------------------------------");

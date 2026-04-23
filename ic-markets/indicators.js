@@ -121,7 +121,7 @@ export function calcTradeParams(entryPrice, triggerCandle, trend, opts = {}) {
  * OR plain { open, high, low, close, time } objects.
  *
  * @param {Array} candles - Chronological (oldest first), min 22 recommended
- * @param {object} opts   - Passed to calcTradeParams (pipBuffer, rrRatio, isJPY, minRiskPips, maxRiskPips)
+ * @param {object} opts   - Passed to calcTradeParams (pipBuffer, rrRatio, isJPY, minRiskPips, maxRiskPips, emaSeparationMinPips)
  * @returns {{
  *   signal: 'buy'|'sell'|'none', trend: Trend,
  *   entry: number|null, sl: number|null, tp: number|null,
@@ -172,6 +172,17 @@ export function generateSignal(candles, opts = {}) {
 
   if (trend === 'neutral') {
     return NO_SIGNAL('Trend not aligned — EMAs in neutral / choppy state', baseExtras);
+  }
+
+  // Optional chop filter: require enough spacing between fast and slow EMAs
+  const pipSize = opts.isJPY ? 0.01 : 0.0001;
+  const emaSeparationPips = Math.abs(ema5 - ema20) / pipSize;
+  const emaSeparationMinPips = opts.emaSeparationMinPips ?? 0;
+  if (emaSeparationPips < emaSeparationMinPips) {
+    return NO_SIGNAL(
+      `EMA separation too small (${emaSeparationPips.toFixed(1)} pips) — below minimum ${emaSeparationMinPips} pip threshold`,
+      baseExtras,
+    );
   }
 
   // 3. Pullback on previous candle

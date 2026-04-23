@@ -16,6 +16,9 @@ const sessionWindowPresetsUTC = {
   ny_only: [
     { name: "ny_overlap", start: 12.5, end: 16.0 },
   ],
+  ny_quality: [
+    { name: "ny_overlap", start: 12.5, end: 16.0 },
+  ],
   ny_trimmed: [
     { name: "ny_overlap", start: 12.75, end: 15.75 },
   ],
@@ -49,7 +52,7 @@ export const config = {
   pollIntervalSeconds: 10,
 
   // ─── Session Hours (EURUSD M5 windows, UTC) ──────────────────────────────
-  // A/B switch: SESSION_WINDOW_MODE=ny_only|ny_trimmed|all_windows
+  // A/B switch: SESSION_WINDOW_MODE=ny_only|ny_quality|ny_trimmed|all_windows
   sessionWindowMode,
   sessionWindowsPresetUTC: sessionWindowPresetsUTC,
   sessionWindowsUTC: selectedSessionWindowsUTC,
@@ -85,6 +88,7 @@ export const config = {
     minRiskPips: envNumber("MIN_RISK_PIPS", 2),
     maxRiskPips: envNumber("MAX_RISK_PIPS", 15),
     cooldownCandlesAfterLoss: envNumber("COOLDOWN_CANDLES_AFTER_LOSS", 1),
+    emaSeparationMinPips: envNumber("EMA_SEPARATION_MIN_PIPS", 0),
   },
 
   backtest: {

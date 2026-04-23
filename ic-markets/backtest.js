@@ -80,6 +80,7 @@ async function main() {
       rrRatio:   config.strategy.rrRatio,
       minRiskPips: config.strategy.minRiskPips,
       maxRiskPips: config.strategy.maxRiskPips,
+      emaSeparationMinPips: config.strategy.emaSeparationMinPips,
       isJPY:     PAIR.includes("JPY"),
     });
 
@@ -116,7 +117,16 @@ async function main() {
   const wins = tradeHistory.filter(t => t.profit > 0);
   const finalStats = {
     type: "backtest",
+    generatedAtUTC: new Date().toISOString(),
     pair: PAIR,
+    profile: {
+      sessionWindowMode: config.sessionWindowMode,
+      sessionWindowsUTC: config.sessionWindowsUTC,
+      emaSeparationMinPips: config.strategy.emaSeparationMinPips,
+      cooldownCandlesAfterLoss: config.strategy.cooldownCandlesAfterLoss,
+      minRiskPips: config.strategy.minRiskPips,
+      maxRiskPips: config.strategy.maxRiskPips,
+    },
     trades: tradeHistory,
     summary: {
       total: tradeHistory.length,

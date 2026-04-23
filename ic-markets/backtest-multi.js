@@ -103,6 +103,7 @@ async function main() {
         rrRatio:   config.strategy.rrRatio,
         minRiskPips: config.strategy.minRiskPips,
         maxRiskPips: config.strategy.maxRiskPips,
+        emaSeparationMinPips: config.strategy.emaSeparationMinPips,
         isJPY:     p.isJPY,
       });
 
@@ -147,7 +148,16 @@ async function main() {
 
   const finalStats = {
     type: "backtest",
+    generatedAtUTC: new Date().toISOString(),
     pairs: PAIRS,
+    profile: {
+      sessionWindowMode: config.sessionWindowMode,
+      sessionWindowsUTC: config.sessionWindowsUTC,
+      emaSeparationMinPips: config.strategy.emaSeparationMinPips,
+      cooldownCandlesAfterLoss: config.strategy.cooldownCandlesAfterLoss,
+      minRiskPips: config.strategy.minRiskPips,
+      maxRiskPips: config.strategy.maxRiskPips,
+    },
     trades: allHistory,
     summary: {
       total: allHistory.length,

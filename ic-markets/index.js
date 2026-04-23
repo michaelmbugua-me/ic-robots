@@ -101,6 +101,7 @@ async function tickPair(pair, timestamp) {
     rrRatio:   config.strategy.rrRatio,
     minRiskPips: config.strategy.minRiskPips,
     maxRiskPips: config.strategy.maxRiskPips,
+    emaSeparationMinPips: config.strategy.emaSeparationMinPips,
     isJPY,
   });
 

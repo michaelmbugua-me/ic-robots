@@ -9,6 +9,17 @@ const FILE_PATH = 'trades_backtest.json';
 const OUTPUT_PATH = 'report.html';
 const KES_RATE = config.risk.usdKesRate || 129.0;
 
+function buildProfileSummary(profile = {}) {
+  const parts = [];
+  if (profile.sessionWindowMode) parts.push(`mode=${profile.sessionWindowMode}`);
+  if (profile.emaSeparationMinPips !== undefined) parts.push(`emaSep=${profile.emaSeparationMinPips}`);
+  if (profile.cooldownCandlesAfterLoss !== undefined) parts.push(`cooldown=${profile.cooldownCandlesAfterLoss}`);
+  if (profile.minRiskPips !== undefined && profile.maxRiskPips !== undefined) {
+    parts.push(`risk=${profile.minRiskPips}-${profile.maxRiskPips} pips`);
+  }
+  return parts.join(' | ');
+}
+
 function formatKES(val) {
   return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: 0 }).format(val);
 }
@@ -36,7 +47,10 @@ function generate() {
 
   const data = JSON.parse(fs.readFileSync(FILE_PATH, "utf8"));
   const trades = data.trades || [];
-  
+  const profile = data.profile || {};
+  const profileSummary = buildProfileSummary(profile);
+  const generatedAtUTC = data.generatedAtUTC || new Date().toISOString();
+
   if (trades.length === 0) {
     console.log("⚠️ No trades to report.");
     return;
@@ -74,6 +88,9 @@ function generate() {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-store, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Strategy Dashboard (KES) — Dark</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -127,6 +144,7 @@ function generate() {
     <div>
       <h1>Trading Performance Terminal</h1>
       <p class="subtitle">System Analytics: ${formatDatePretty(trades[0].time)} to ${formatDatePretty(trades[trades.length-1].time)}</p>
+      <p class="subtitle">${profileSummary || 'profile=unknown'} &nbsp;|&nbsp; generated ${generatedAtUTC}</p>
     </div>
     <div class="subtitle" style="text-align: right;">Currency: KES &nbsp; | &nbsp; Rate: ${KES_RATE}</div>
   </header>

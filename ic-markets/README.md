@@ -157,11 +157,14 @@ The bot provides real-time market sentiment to the AI via Finnhub market headlin
 # Monitor only — signals printed, no trades placed (START HERE)
 npm start
 
-# Auto-execute EUR/USD (High-Hardened Mode)
+# Auto-execute EUR/USD (default = NY quality profile)
 npm run auto
 
 # Compare session modes side-by-side (ny_only vs all_windows)
 npm run compare:modes
+
+# NY quality profile (NY window + EMA separation >= 0.5 pips)
+npm run backtest:ny-quality
 ```
 
 `compare:modes` also saves a timestamped snapshot in the project root:
@@ -203,6 +206,7 @@ node prune-mode-snapshots.js --keep 10 --dry-run
 | Session | UTC Hours | Quality |
 |---|---|---|
 | Default mode (`ny_only`) | 12:30–16:00 | ⭐ Best quality so far |
+| Quality mode (`ny_quality`) | 12:30–16:00 + EMA sep >= 0.5 | 🧪 Extra chop filter |
 | Experimental (`ny_trimmed`) | 12:45–15:45 | 🧪 Slight edge trim for A/B testing |
 | Alt mode (`all_windows`) | 07:00–10:00 + 12:30–16:00 | ✅ Higher trade count |
 | Off hours | all other UTC times | ⚠️ Skipped |
@@ -210,6 +214,7 @@ node prune-mode-snapshots.js --keep 10 --dry-run
 Set mode with environment variable:
 ```bash
 SESSION_WINDOW_MODE=ny_only npm run backtest
+SESSION_WINDOW_MODE=ny_quality EMA_SEPARATION_MIN_PIPS=0.5 npm run backtest
 SESSION_WINDOW_MODE=ny_trimmed npm run backtest
 SESSION_WINDOW_MODE=all_windows npm run backtest
 ```

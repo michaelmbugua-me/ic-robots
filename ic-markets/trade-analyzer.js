@@ -15,6 +15,7 @@ function analyze() {
 
   const data = JSON.parse(fs.readFileSync(FILE_PATH, "utf8"));
   const trades = data.trades || [];
+  const profile = data.profile || {};
 
   if (trades.length === 0) {
     console.log("⚠️ No trades to analyze.");
@@ -37,6 +38,17 @@ function analyze() {
 
   console.log(`\n═══ 📅 DAILY PERFORMANCE DASHBOARD (${data.type.toUpperCase()}) ═══`);
   console.log(`  Strategy: 5-10-20 EMA Scalping`);
+  if (profile.sessionWindowMode) {
+    console.log(
+      `  Profile : mode=${profile.sessionWindowMode} | ` +
+      `emaSep=${profile.emaSeparationMinPips ?? 0} | ` +
+      `cooldown=${profile.cooldownCandlesAfterLoss ?? 0} | ` +
+      `risk=${profile.minRiskPips ?? "?"}-${profile.maxRiskPips ?? "?"} pips`
+    );
+  }
+  if (data.generatedAtUTC) {
+    console.log(`  Generated: ${data.generatedAtUTC}`);
+  }
   console.log(`${"═".repeat(60)}`);
   console.log(`  DATE        | TRADES | WIN % | NET PnL ($)`);
   console.log(`${"-".repeat(60)}`);
