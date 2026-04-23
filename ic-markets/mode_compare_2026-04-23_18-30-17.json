@@ -1,0 +1,41 @@
+{
+  "generatedAtUTC": "2026-04-23T18:30:17.589Z",
+  "startBalance": 385,
+  "outputSource": "trades_backtest.json",
+  "modes": [
+    {
+      "key": "ny_only",
+      "label": "NY Only (12:30-16:00 UTC)",
+      "trades": 694,
+      "winRate": 42.07492795389049,
+      "net": 244.92137999996442,
+      "expectancy": 0.3529126512967787,
+      "profitFactor": 1.1105760981349493,
+      "endBalance": 629.9213799999637,
+      "roiPct": 63.61594285713343,
+      "maxDrawdownPct": 25.482069307621142
+    },
+    {
+      "key": "all_windows",
+      "label": "All Windows (London + NY)",
+      "trades": 1400,
+      "winRate": 41.85714285714286,
+      "net": 398.69744999999193,
+      "expectancy": 0.28478389285713707,
+      "profitFactor": 1.0941716958362484,
+      "endBalance": 783.6974499999918,
+      "roiPct": 103.55777922077709,
+      "maxDrawdownPct": 17.50379259961781
+    }
+  ],
+  "winners": {
+    "bestByProfitFactor": {
+      "key": "ny_only",
+      "label": "NY Only (12:30-16:00 UTC)"
+    },
+    "bestByExpectancy": {
+      "key": "ny_only",
+      "label": "NY Only (12:30-16:00 UTC)"
+    }
+  }
+}

@@ -24,6 +24,8 @@ function getState(pair) {
     pairState.set(pair, {
       candleCache: [],
       activeTrades: [],
+      cooldownCandlesRemaining: 0,
+      lastCandleTime: null,
       lastLogTime: 0,
       needsRefresh: true
     });
@@ -83,10 +85,22 @@ async function tickPair(pair, timestamp) {
 
   if (state.candleCache.length < 22) return;
 
+  const currentCandleTime = state.candleCache[state.candleCache.length - 1]?.time ?? null;
+  if (currentCandleTime && currentCandleTime !== state.lastCandleTime) {
+    if (state.lastCandleTime && state.cooldownCandlesRemaining > 0) {
+      state.cooldownCandlesRemaining -= 1;
+    }
+    state.lastCandleTime = currentCandleTime;
+  }
+
+  if (state.cooldownCandlesRemaining > 0) return;
+
   // 2. Generate signal
   const signal = generateSignal(state.candleCache, {
     pipBuffer: config.strategy.pipBuffer,
     rrRatio:   config.strategy.rrRatio,
+    minRiskPips: config.strategy.minRiskPips,
+    maxRiskPips: config.strategy.maxRiskPips,
     isJPY,
   });
 
@@ -122,7 +136,7 @@ async function tickPair(pair, timestamp) {
 
     const res = await icmarkets.openPosition(pair, action, units, signal.sl, signal.tp);
     if (res && res.positionId) {
-      state.activeTrades.push({ id: String(res.positionId), direction: action, pair, entry: signal.entry });
+      state.activeTrades.push({ id: String(res.positionId), direction: action, pair, entry: signal.entry, sl: signal.sl, tp: signal.tp });
       saveState();
     }
   } catch (err) {
@@ -137,10 +151,25 @@ function handleExecutionEvent(payload) {
     const deal = payload.deal;
     if (deal && deal.closePositionDetail) {
       const positionId = String(deal.positionId);
+      let matchedTrade = null;
       console.log(`  🔔  Position ${positionId} closed.`);
       for (const [, state] of pairState) {
+        const found = state.activeTrades.find(t => t.id === positionId);
+        if (found) matchedTrade = found;
         state.activeTrades = state.activeTrades.filter(t => t.id !== positionId);
       }
+
+      if (matchedTrade && config.strategy.cooldownCandlesAfterLoss > 0) {
+        let exitPrice = Number(deal.executionPrice ?? 0);
+        if (exitPrice > 1000) exitPrice = exitPrice / 100000;
+        const pipSize = matchedTrade.pair?.includes("JPY") ? 0.01 : 0.0001;
+        const epsilon = pipSize * 2;
+        if (Math.abs(exitPrice - matchedTrade.sl) <= epsilon) {
+          const state = getState(matchedTrade.pair);
+          state.cooldownCandlesRemaining = Math.max(state.cooldownCandlesRemaining, config.strategy.cooldownCandlesAfterLoss);
+        }
+      }
+
       saveState();
     }
   }

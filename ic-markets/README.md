@@ -159,6 +159,28 @@ npm start
 
 # Auto-execute EUR/USD (High-Hardened Mode)
 npm run auto
+
+# Compare session modes side-by-side (ny_only vs all_windows)
+npm run compare:modes
+```
+
+`compare:modes` also saves a timestamped snapshot in the project root:
+`mode_compare_YYYY-MM-DD_HH-mm-ss.json`
+
+Clean up old snapshots (keeps latest 30 by default):
+```bash
+npm run compare:modes:prune
+```
+
+Run compare + prune in one step:
+```bash
+npm run compare:modes:run
+```
+
+Optional retention override:
+```bash
+MODE_COMPARE_KEEP=50 npm run compare:modes:prune
+node prune-mode-snapshots.js --keep 10 --dry-run
 ```
 
 ---
@@ -180,11 +202,34 @@ npm run auto
 
 | Session | UTC Hours | Quality |
 |---|---|---|
-| Tokyo/Sydney | 00:00–07:00 | ⚠️ Skipped (low liquidity) |
-| London | 07:00–16:00 | ✅ Good |
-| London + NY overlap | 13:00–16:00 | ⭐ Best — tightest spreads |
-| New York | 16:00–22:00 | ✅ Good |
-| Off hours | 22:00–07:00 | ⚠️ Skipped |
+| Default mode (`ny_only`) | 12:30–16:00 | ⭐ Best quality so far |
+| Experimental (`ny_trimmed`) | 12:45–15:45 | 🧪 Slight edge trim for A/B testing |
+| Alt mode (`all_windows`) | 07:00–10:00 + 12:30–16:00 | ✅ Higher trade count |
+| Off hours | all other UTC times | ⚠️ Skipped |
+
+Set mode with environment variable:
+```bash
+SESSION_WINDOW_MODE=ny_only npm run backtest
+SESSION_WINDOW_MODE=ny_trimmed npm run backtest
+SESSION_WINDOW_MODE=all_windows npm run backtest
+```
+
+Fine-tune risk-band filters:
+```bash
+MIN_RISK_PIPS=2 MAX_RISK_PIPS=15 npm run backtest:ny
+```
+
+Current defaults keep the original 2-pip minimum and add a modest 15-pip max-risk cap
+to skip wider-stop setups that tend to block cleaner follow-up trades.
+
+Post-loss cooldown (default: 1 candle):
+```bash
+COOLDOWN_CANDLES_AFTER_LOSS=1 npm run backtest:ny
+COOLDOWN_CANDLES_AFTER_LOSS=0 npm run backtest:ny
+```
+
+Current default is a 1-candle cooldown after an `SL`, which tested better than both
+no cooldown and a 2-candle cooldown in the current backtests.
 
 ---
 

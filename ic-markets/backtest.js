@@ -39,6 +39,7 @@ async function main() {
   let balance = INITIAL_BALANCE;
   let activeTrades = [];
   let tradeHistory = [];
+  let cooldownCandlesRemaining = 0;
   const windowM5 = 100;
 
   for (let i = windowM5; i < allCandles.length; i++) {
@@ -68,10 +69,17 @@ async function main() {
     const dateObj = new Date(timestamp);
     if (dateObj.getUTCDay() === 0 || dateObj.getUTCDay() === 6 || !isTradeWindowUTC(dateObj)) continue;
 
+    if (cooldownCandlesRemaining > 0) {
+      cooldownCandlesRemaining -= 1;
+      continue;
+    }
+
     // Signal Generation
     const signal = generateSignal(currentM5Candles, {
       pipBuffer: config.strategy.pipBuffer,
       rrRatio:   config.strategy.rrRatio,
+      minRiskPips: config.strategy.minRiskPips,
+      maxRiskPips: config.strategy.maxRiskPips,
       isJPY:     PAIR.includes("JPY"),
     });
 
@@ -98,6 +106,9 @@ async function main() {
     const pips = diff / PIP_SIZE;
     const profit = (pips * (10/100000)) * trade.units;
     balance += profit;
+    if (reason === "SL" && config.strategy.cooldownCandlesAfterLoss > 0) {
+      cooldownCandlesRemaining = Math.max(cooldownCandlesRemaining, config.strategy.cooldownCandlesAfterLoss);
+    }
     tradeHistory.push({ ...trade, profit, reason, time, exitTime: time, exit: exitPrice, balance });
     console.log(`  ✅ [${time}] ${reason} at ${exitPrice.toFixed(5)} | Net: $${profit.toFixed(2)} | Bal: $${balance.toFixed(2)}`);
   }

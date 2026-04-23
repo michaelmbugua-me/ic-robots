@@ -121,7 +121,7 @@ export function calcTradeParams(entryPrice, triggerCandle, trend, opts = {}) {
  * OR plain { open, high, low, close, time } objects.
  *
  * @param {Array} candles - Chronological (oldest first), min 22 recommended
- * @param {object} opts   - Passed to calcTradeParams (pipBuffer, rrRatio, isJPY)
+ * @param {object} opts   - Passed to calcTradeParams (pipBuffer, rrRatio, isJPY, minRiskPips, maxRiskPips)
  * @returns {{
  *   signal: 'buy'|'sell'|'none', trend: Trend,
  *   entry: number|null, sl: number|null, tp: number|null,
@@ -189,9 +189,15 @@ export function generateSignal(candles, opts = {}) {
   // 5. Trade parameters
   const entry = closes[last];
   const { sl, tp, riskPips, rewardPips } = calcTradeParams(entry, norm[last], trend, opts);
+  const minRiskPips = opts.minRiskPips ?? 2;
+  const maxRiskPips = opts.maxRiskPips ?? Infinity;
 
-  if (riskPips < 2) {
-    return NO_SIGNAL(`Risk too small (${riskPips} pips) — skip to avoid spread erosion`, baseExtras);
+  if (riskPips < minRiskPips) {
+    return NO_SIGNAL(`Risk too small (${riskPips} pips) — below minimum ${minRiskPips} pip threshold`, baseExtras);
+  }
+
+  if (riskPips > maxRiskPips) {
+    return NO_SIGNAL(`Risk too large (${riskPips} pips) — above maximum ${maxRiskPips} pip threshold`, baseExtras);
   }
 
   return {

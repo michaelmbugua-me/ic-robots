@@ -46,6 +46,7 @@ async function main() {
         pipSize: pair.includes("JPY") ? 0.01 : 0.0001,
         activeTrades: [],
         tradeHistory: [],
+        cooldownCandlesRemaining: 0,
         candleIndex: 0
     };
     candles.forEach(c => allTimestamps.add(c.time));
@@ -91,10 +92,17 @@ async function main() {
       const dateObj = new Date(timestamp);
       if (dateObj.getUTCDay() === 0 || dateObj.getUTCDay() === 6 || !isTradeWindowUTC(dateObj)) continue;
 
+      if (p.cooldownCandlesRemaining > 0) {
+        p.cooldownCandlesRemaining -= 1;
+        continue;
+      }
+
       // Signal Generation
       const signal = generateSignal(currentM5Candles, {
         pipBuffer: config.strategy.pipBuffer,
         rrRatio:   config.strategy.rrRatio,
+        minRiskPips: config.strategy.minRiskPips,
+        maxRiskPips: config.strategy.maxRiskPips,
         isJPY:     p.isJPY,
       });
 
@@ -127,6 +135,9 @@ async function main() {
     const pips = diff / p.pipSize;
     const profit = (pips * (10/100000)) * trade.units;
     balance += profit;
+    if (reason === "SL" && config.strategy.cooldownCandlesAfterLoss > 0) {
+      p.cooldownCandlesRemaining = Math.max(p.cooldownCandlesRemaining, config.strategy.cooldownCandlesAfterLoss);
+    }
     p.tradeHistory.push({ ...trade, exit: exitPrice, exitTime, reason, profit, balance });
     console.log(`  ✅ [${exitTime}] ${pair} ${reason} | Net: $${profit.toFixed(2)} | Bal: $${balance.toFixed(2)}`);
   }

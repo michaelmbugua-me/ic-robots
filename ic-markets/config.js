@@ -5,6 +5,29 @@
 
 import "dotenv/config";
 
+function envNumber(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+const sessionWindowPresetsUTC = {
+  ny_only: [
+    { name: "ny_overlap", start: 12.5, end: 16.0 },
+  ],
+  ny_trimmed: [
+    { name: "ny_overlap", start: 12.75, end: 15.75 },
+  ],
+  all_windows: [
+    { name: "london_open", start: 7.0, end: 10.0 },
+    { name: "ny_overlap", start: 12.5, end: 16.0 },
+  ],
+};
+
+const sessionWindowMode = process.env.SESSION_WINDOW_MODE || "ny_only";
+const selectedSessionWindowsUTC = sessionWindowPresetsUTC[sessionWindowMode] || sessionWindowPresetsUTC.ny_only;
+
 export const config = {
   // ─── AI Settings (Optional for this strategy) ───────────────────────
   aiProvider: process.env.AI_PROVIDER || "ollama",
@@ -25,17 +48,15 @@ export const config = {
   granularity:         "M5",
   pollIntervalSeconds: 10,
 
-  // ─── Session Hours (EURUSD M5 priority windows, UTC) ─────────────────────
-  // 1) London open momentum: 07:00-10:00 UTC
-  // 2) London/NY overlap:    12:30-16:00 UTC
-  sessionWindowsUTC: [
-    { name: "london_open", start: 7.0, end: 10.0 },
-    { name: "ny_overlap",  start: 12.5, end: 16.0 },
-  ],
+  // ─── Session Hours (EURUSD M5 windows, UTC) ──────────────────────────────
+  // A/B switch: SESSION_WINDOW_MODE=ny_only|ny_trimmed|all_windows
+  sessionWindowMode,
+  sessionWindowsPresetUTC: sessionWindowPresetsUTC,
+  sessionWindowsUTC: selectedSessionWindowsUTC,
 
   // Backward-compatible fallback window for older scripts
-  sessionStartUTC: 7,
-  sessionEndUTC:   16,
+  sessionStartUTC: 12.5,
+  sessionEndUTC:   16.0,
 
   // ─── Financial Plan & Risk Management ──────────────────────────────────
   risk: {
@@ -61,6 +82,9 @@ export const config = {
     // 5-10-20 EMA Scalping
     pipBuffer: 0.00005,  // 0.5-pip buffer beyond trigger candle edge for SL
     rrRatio:   1.5,      // Reward-to-risk ratio for TP calculation
+    minRiskPips: envNumber("MIN_RISK_PIPS", 2),
+    maxRiskPips: envNumber("MAX_RISK_PIPS", 15),
+    cooldownCandlesAfterLoss: envNumber("COOLDOWN_CANDLES_AFTER_LOSS", 1),
   },
 
   backtest: {
