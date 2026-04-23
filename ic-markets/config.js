@@ -1,109 +1,64 @@
 /**
- * Configuration — IC Markets cTrader Edition (Balanced Scalper)
- * 
- * CLEANED & CONSOLIDATED
+ * Configuration — 5-10-20 EMA Scalping Strategy
+ * EURUSD M5 — IC Markets cTrader
  */
 
 import "dotenv/config";
 
 export const config = {
-  // ─── AI Provider ───────────────────────────────────────────────────────
+  // ─── AI Settings (Optional for this strategy) ───────────────────────
   aiProvider: process.env.AI_PROVIDER || "ollama",
-  aiMode: process.env.AI_MODE || "OFF",
+  aiMode:     process.env.AI_MODE || "OFF",
 
-  ollama: {
-    baseUrl:    process.env.OLLAMA_BASE_URL || "http://localhost:11434",
-    model:      process.env.OLLAMA_MODEL    || "llama3.2:3b",
-    timeout:    45000,
-  },
-
-  // ─── cTrader Open API App Credentials ──────────────────────────────────
+  // ─── cTrader Credentials ─────────────────────────────────────────────
   ctraderClientId:     process.env.CTRADER_CLIENT_ID     || "",
   ctraderClientSecret: process.env.CTRADER_CLIENT_SECRET || "",
   ctraderAccessToken:  process.env.CTRADER_ACCESS_TOKEN  || "",
   ctraderAccountId:    Number(process.env.CTRADER_ACCOUNT_ID) || 0,
-  ctraderEnv:          "demo", // "demo" or "live"
+  ctraderEnv:          "demo", 
 
-  ctraderSymbolIds: {
-    "EUR_USD": 1, "GBP_USD": 2, "USD_JPY": 3, "USD_CHF": 4, "AUD_USD": 5,
-    "USD_CAD": 6, "NZD_USD": 7, "EUR_GBP": 8, "EUR_JPY": 9, "GBP_JPY": 10,
-  },
+  ctraderSymbolIds: { "EUR_USD": 1 },
 
-  // ─── Trading Scope ─────────────────────────────────────────────────────
+  // ─── Strategy Scope ─────────────────────────────────────────────────────────
   defaultInstrument:   "EUR_USD",
-  tradingPairs: (process.env.TRADING_PAIRS || "EUR_USD").split(",").map(s => s.trim()),
+  tradingPairs:        ["EUR_USD"],
   granularity:         "M5",
-  pollIntervalSeconds: 5,
-  connectionTimeoutSeconds: 10,
+  pollIntervalSeconds: 10,
 
-  // ─── Session Hours (UTC) ────────────────────────────────────────────────
-  sessionStartUTC: 8,
-  sessionEndUTC:   18,
+  // ─── Session Hours (8am-12pm EST is approx 13:00-17:00 UTC) ─────────────
+  sessionStartUTC: 12,
+  sessionEndUTC:   16,
 
-  // ─── Risk Management (KES Denominated) ──────────────────────────────────
+  // ─── Financial Plan & Risk Management ──────────────────────────────────
   risk: {
     accountCapitalKES:    50_000,
-    dailyStopLossKES:     1_000,
-    dailyProfitTargetKES: 1_000,
+    dailyStopLossKES:     1_000, // 2% Total cap
+    dailyProfitTargetKES: 500,   // 1% Goal
     maxLeverage:          100,
     usdKesRate:           129.0,
+    riskPerTradeKES:      1_000, // 2% Risk per trade
     minRiskReward:        1.5,
   },
 
   // ─── Trade Limits ───────────────────────────────────────────────────────
-  maxTotalTrades:      2, // Global cap (shared across all pairs)
-  maxTradesPerPair:    2, // Local cap (per individual pair)
-  minTradeDistancePips: 4, // Distance between overlapping entries
-  riskPercentPerTrade: 1.0, // Used for backtesting and volume calc
+  maxTotalTrades:      1, // Focus on one quality trade at a time
+  maxTradesPerPair:    1,
+  minTradeDistancePips: 10,
 
-  // ─── Safety & Circuit Breakers ──────────────────────────────────────────
-  lossCooldownMinutes: 15,
-  maxSpreadPips: 1.5,
-  minAtrPips: 0.7, 
-  maxSlippagePips: 0.2,
-  minStopDistancePips: 2,
-  atrMultiplierFloor: 0.3,
-
-  // ─── Profit Protection ──────────────────────────────────────────────────
-  useBreakeven: true,
-  breakevenTriggerATR: 1.5, 
-  useTrailingStop: true,
-  trailingStopATR: 1.0, 
-
-  // ─── Strategy Settings (Base Pullback) ──────────────────────────────────
+  // ─── Safety & Indicators ───────────────────────────────────────────────
+  maxSpreadPips: 1.2,
+  minStopDistancePips: 5,
+  
   strategy: {
-    atrMultiplierSL: 2.5, 
-    atrMultiplierTP: 4.5, 
-    rsiThresholdLow:  30, 
-    rsiThresholdHigh: 70, 
-    emaFast: 8,
-    emaSlow: 21,
-    minAdx: 16, 
-    minVolumeRatio: 1.0,
-    minConfirmations: 1,
-    ema200Period: 200,
-    atrAveragePeriod: 20,   
-    usePriceActionTrigger: false, 
-    srLookbackPeriods: 50,   
+    // 5-10-20 EMA Scalping
+    pipBuffer: 0.00005,  // 0.5-pip buffer beyond trigger candle edge for SL
+    rrRatio:   1.5,      // Reward-to-risk ratio for TP calculation
   },
 
-  // ─── Pair-Specific Overrides ────────────────────────────────────────────
-  pairOverrides: {
-    "EUR_USD": {
-      // Inherits base strategy (Balanced Scalper)
-    },
-    "EUR_GBP": {
-      minAdx: 15,
-      atrMultiplierSL: 2.0,
-      atrMultiplierTP: 3.5,
-    }
-  },
-
-  // ─── Backtest Specific ──────────────────────────────────────────────────
   backtest: {
-    spreadPips: 0.1,
-    slippagePips: 0.2,
+    spreadPips: 0.2,
+    slippagePips: 0.3,
     commissionPerSideUSD: 3.00,
-    initialBalance: 500,
+    initialBalance: 385, // ~$50,000 KES
   }
 };

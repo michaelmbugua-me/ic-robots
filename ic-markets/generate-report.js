@@ -1,5 +1,5 @@
 /**
- * Report Generator
+ * Report Generator — 5-10-20 EMA Scalping Strategy
  * Converts trade JSON data into a beautiful DARK HTML dashboard (KES Denominated).
  */
 import fs from 'fs';

@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "auth": "node auth.js",
-    "symbols": "node get-sym  bols.js",
+    "symbols": "node get-symbols.js",
     "start": "node index.js",
     "auto": "node index.js --auto-execute",
     "download": "node download-history.js",

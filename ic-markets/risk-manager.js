@@ -24,7 +24,7 @@ export class RiskManager {
     this.dailyStopLossKES     = config.risk.dailyStopLossKES;
     this.dailyProfitTargetKES = config.risk.dailyProfitTargetKES;
     this.maxLeverage          = config.risk.maxLeverage;
-    this.maxOpenTrades        = config.risk.maxOpenTrades;
+    this.maxOpenTrades        = config.maxTotalTrades || config.risk.maxOpenTrades || 1;
     this.minRiskReward        = config.risk.minRiskReward;
 
     // Daily tracking (reset each UTC day)
@@ -115,7 +115,9 @@ export class RiskManager {
     }
 
     // Volume = riskAmountKES / (SL_Pips × pipValuePerUnit_KES)
-    let units = Math.floor(this.dailyStopLossKES / (slPips * pipValuePerUnitKES));
+    // We risk only a portion of the daily stop loss per trade
+    const riskAmountPerTradeKES = this.dailyStopLossKES / Math.max(1, this.maxOpenTrades);
+    let units = Math.floor(riskAmountPerTradeKES / (slPips * pipValuePerUnitKES));
 
     // Leverage constraint: position notional must not exceed accountCapital × maxLeverage
     // Notional in KES = units × currentRate × usdKesRate (for USD-denominated pairs)

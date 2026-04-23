@@ -1,6 +1,6 @@
 /**
  * Trade Performance Analyzer & Dashboard
- * Generates a Daily PnL Calendar from trades_backtest.json or live trade data.
+ * Generates a Daily PnL Calendar from trades_backtest.json (5-10-20 EMA Strategy)
  */
 
 import fs from "fs";
@@ -36,6 +36,7 @@ function analyze() {
   const sortedDates = Object.keys(dailyStats).sort();
 
   console.log(`\n═══ 📅 DAILY PERFORMANCE DASHBOARD (${data.type.toUpperCase()}) ═══`);
+  console.log(`  Strategy: 5-10-20 EMA Scalping`);
   console.log(`${"═".repeat(60)}`);
   console.log(`  DATE        | TRADES | WIN % | NET PnL ($)`);
   console.log(`${"-".repeat(60)}`);
