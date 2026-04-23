@@ -64,10 +64,9 @@ async function main() {
       return true;
     });
 
-    // Session Hours (12:00-16:00 UTC)
+    // Session Hours (supports multi-window UTC, incl. half-hours)
     const dateObj = new Date(timestamp);
-    const h = dateObj.getUTCHours();
-    if (dateObj.getUTCDay() === 0 || dateObj.getUTCDay() === 6 || h < config.sessionStartUTC || h >= config.sessionEndUTC) continue;
+    if (dateObj.getUTCDay() === 0 || dateObj.getUTCDay() === 6 || !isTradeWindowUTC(dateObj)) continue;
 
     // Signal Generation
     const signal = generateSignal(currentM5Candles, {
@@ -122,6 +121,17 @@ async function main() {
 
   console.log(`\n  📊 FINAL: $${balance.toFixed(2)} | Trades: ${tradeHistory.length} | Win Rate: ${finalStats.summary.winRate}%`);
   console.log(`  💾 Data saved to trades_backtest.json\n`);
+}
+
+function isTradeWindowUTC(dateObj) {
+  const windows = config.sessionWindowsUTC;
+  const h = dateObj.getUTCHours() + (dateObj.getUTCMinutes() / 60);
+
+  if (Array.isArray(windows) && windows.length > 0) {
+    return windows.some(w => h >= w.start && h < w.end);
+  }
+
+  return h >= config.sessionStartUTC && h < config.sessionEndUTC;
 }
 
 main().catch(console.error);

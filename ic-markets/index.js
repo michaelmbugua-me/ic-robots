@@ -56,10 +56,12 @@ async function tick() {
   const timestamp = new Date().toLocaleTimeString();
   const now = new Date();
 
-  const h   = now.getUTCHours();
   const day = now.getUTCDay();
-  if (day === 0 || day === 6 || h < config.sessionStartUTC || h >= config.sessionEndUTC) {
-    process.stdout.write(`[${timestamp}] 💤 Outside trading session (${h}:00 UTC)\r`);
+  const activeWindow = getActiveSessionWindowUTC(now);
+  if (day === 0 || day === 6 || !activeWindow) {
+    const utcHour = `${now.getUTCHours()}`.padStart(2, "0");
+    const utcMin = `${now.getUTCMinutes()}`.padStart(2, "0");
+    process.stdout.write(`[${timestamp}] 💤 Outside trading windows (${utcHour}:${utcMin} UTC)\r`);
     return;
   }
 
@@ -171,6 +173,17 @@ function saveState() {
   const allTrades = [];
   for (const [, state] of pairState) allTrades.push(...state.activeTrades);
   fs.writeFileSync(STATE_FILE, JSON.stringify({ activeTrades: allTrades }, null, 2));
+}
+
+function getActiveSessionWindowUTC(now) {
+  const windows = config.sessionWindowsUTC;
+  if (!Array.isArray(windows) || windows.length === 0) {
+    const h = now.getUTCHours() + (now.getUTCMinutes() / 60);
+    return h >= config.sessionStartUTC && h < config.sessionEndUTC ? { name: "legacy" } : null;
+  }
+
+  const h = now.getUTCHours() + (now.getUTCMinutes() / 60);
+  return windows.find(w => h >= w.start && h < w.end) || null;
 }
 
 run().catch(console.error);

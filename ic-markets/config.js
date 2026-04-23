@@ -25,8 +25,16 @@ export const config = {
   granularity:         "M5",
   pollIntervalSeconds: 10,
 
-  // ─── Session Hours (8am-12pm EST is approx 13:00-17:00 UTC) ─────────────
-  sessionStartUTC: 12,
+  // ─── Session Hours (EURUSD M5 priority windows, UTC) ─────────────────────
+  // 1) London open momentum: 07:00-10:00 UTC
+  // 2) London/NY overlap:    12:30-16:00 UTC
+  sessionWindowsUTC: [
+    { name: "london_open", start: 7.0, end: 10.0 },
+    { name: "ny_overlap",  start: 12.5, end: 16.0 },
+  ],
+
+  // Backward-compatible fallback window for older scripts
+  sessionStartUTC: 7,
   sessionEndUTC:   16,
 
   // ─── Financial Plan & Risk Management ──────────────────────────────────
