@@ -42,7 +42,9 @@ jobs:
             if [ -f "package.json" ]; then
               mkdir -p logs
               npm install --omit=dev
-              pm2 startOrRestart ecosystem.config.cjs --only ic-scalping-bot --update-env
+              # Delete existing process to ensure a clean start and avoid ID mismatch issues
+              pm2 delete ic-scalping-bot || true
+              pm2 start ecosystem.config.cjs --update-env
               pm2 save
             else
               echo "Error: package.json not found in $(pwd)"
