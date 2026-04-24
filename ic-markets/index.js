@@ -86,10 +86,16 @@ async function tickPair(pair, timestamp) {
   const now   = Date.now();
   const isJPY = pair.includes("JPY");
 
-  // 1. Fetch candles (rolling 100-candle window)
-  if (state.needsRefresh || state.candleCache.length < 30) {
-    state.candleCache = await icmarkets.getCandles(pair, config.granularity, 100);
-    state.needsRefresh = false;
+  // 1. Refresh candles every poll to avoid stale trend/signal state.
+  try {
+    const latestCandles = await icmarkets.getCandles(pair, config.granularity, 100);
+    if (Array.isArray(latestCandles) && latestCandles.length > 0) {
+      state.candleCache = latestCandles;
+    }
+  } catch (err) {
+    if (!state.candleCache.length) {
+      throw err;
+    }
   }
 
   if (state.candleCache.length < 22) return;

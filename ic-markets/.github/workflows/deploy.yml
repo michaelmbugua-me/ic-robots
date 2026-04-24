@@ -21,4 +21,5 @@ jobs:
             cd /home/kelvinmbugua/ic-robots            # ← your app directory on the VM
             git pull origin main
             npm install --production
-            npm run pm2:restart || npm run pm2:start
+            pm2 startOrRestart ecosystem.config.js --only ic-scalping-bot --update-env
+            pm2 save
