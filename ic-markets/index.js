@@ -39,18 +39,27 @@ async function run() {
   console.log(`  Mode: ${AUTO_EXECUTE ? "🚀 AUTO-EXECUTE" : "💡 MONITOR ONLY"}`);
   console.log(`${"═".repeat(60)}\n`);
 
+  console.log(`  🔌 Connecting to cTrader (${config.ctraderEnv})...`);
   await icmarkets.connect();
+  console.log(`  ✅ Connected.`);
+
+  console.log(`  🔐 Authenticating trading account...`);
   await icmarkets.authenticate();
+  console.log(`  ✅ Authenticated.`);
 
   loadState();
 
   for (const pair of PAIRS) {
+    console.log(`  🔄 Reconciling account state for ${pair}...`);
     await reconcileAccount(pair);
+    console.log(`  📡 Subscribing to live ticks for ${pair}...`);
     await icmarkets.subscribeTicks(pair);
   }
 
   icmarkets.on(2126, (payload) => handleExecutionEvent(payload));
 
+  console.log(`  ⏱️ Poll loop started (${config.pollIntervalSeconds}s interval).`);
+  await tick();
   setInterval(tick, config.pollIntervalSeconds * 1000);
 }
 

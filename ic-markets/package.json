@@ -8,7 +8,7 @@
     "auth": "node auth.js",
     "symbols": "node get-symbols.js",
     "start": "node index.js",
-    "auto": "SESSION_WINDOW_MODE=ny_quality EMA_SEPARATION_MIN_PIPS=0.5 node index.js --auto-execute",
+    "auto": "SESSION_WINDOW_MODE=all_windows EMA_SEPARATION_MIN_PIPS=0.5 node index.js --auto-execute",
     "download": "node download-history.js",
     "backtest": "node backtest-multi.js",
     "backtest:ny": "SESSION_WINDOW_MODE=ny_only node backtest-multi.js",

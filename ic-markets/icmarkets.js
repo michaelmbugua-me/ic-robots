@@ -138,10 +138,21 @@ export class ICMarketsClient {
       : "demo.ctraderapi.com";
 
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const connectTimeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { this.ws?.terminate(); } catch {}
+        reject(new Error(`Timeout connecting to cTrader WebSocket (${host}:5035)`));
+      }, 15_000);
+
       // Protobuf port is 5035
       this.ws = new WebSocket(`wss://${host}:5035`);
 
       this.ws.on("open", () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(connectTimeout);
         this.connected = true;
         this.lastMessageTime = Date.now();
         this._startHeartbeat();
@@ -156,11 +167,16 @@ export class ICMarketsClient {
       });
 
       this.ws.on("error", (err) => {
-        if (!this.connected) reject(err);
+        if (!this.connected && !settled) {
+          settled = true;
+          clearTimeout(connectTimeout);
+          reject(err);
+        }
         console.error("❌ WebSocket error:", err.message);
       });
 
       this.ws.on("close", () => {
+        clearTimeout(connectTimeout);
         const wasConnected = this.connected;
         this.connected = false;
         clearInterval(this.heartbeatTimer);
