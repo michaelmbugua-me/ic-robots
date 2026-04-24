@@ -18,8 +18,12 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           port: ${{ secrets.VM_PORT }}
           script: |
-            cd /home/kelvinmbugua/ic-robots/ic-markets
-            pwd
+            mkdir -p /home/kelvinmbugua/ic-robots
+            cd /home/kelvinmbugua/ic-robots
+            if [ ! -d "ic-markets/.git" ]; then
+              git clone https://github.com/${{ github.repository }}.git ic-markets
+            fi
+            cd ic-markets
             git fetch origin main
             git reset --hard origin/main
             npm install --omit=dev
