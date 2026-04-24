@@ -65,14 +65,6 @@
             </PendingDiffInfo>
           </value>
         </entry>
-        <entry key="$PROJECT_DIR$/ecosystem.config.js">
-          <value>
-            <PendingDiffInfo>
-              <option name="filePath" value="$PROJECT_DIR$/ecosystem.config.js" />
-              <option name="updatedContent" value="export default {&#10;  apps: [&#10;    {&#10;      name: 'ic-scalping-bot',&#10;      script: 'index.js',&#10;      instances: 1,&#10;      exec_mode: 'fork',&#10;      watch: false,&#10;      ignore_watch: ['node_modules', '*.json', 'history_*.json', 'activity.log'],&#10;      env: {&#10;        NODE_ENV: 'production',&#10;        SESSION_WINDOW_MODE: 'ny_quality',&#10;        EMA_SEPARATION_MIN_PIPS: '0.5'&#10;      },&#10;      args: '--auto-execute',&#10;      error_file: 'logs/err.log',&#10;      out_file: 'logs/out.log',&#10;      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',&#10;      merge_logs: true,&#10;      autorestart: true,&#10;      max_restarts: 10,&#10;      min_uptime: '10s',&#10;      max_memory_restart: '500M',&#10;      kill_timeout: 5000,&#10;      restart_delay: 4000,&#10;      listen_timeout: 3000,&#10;      shutdown_with_message: true&#10;    }&#10;  ]&#10;};&#10;" />
-            </PendingDiffInfo>
-          </value>
-        </entry>
         <entry key="$PROJECT_DIR$/generate-report.js">
           <value>
             <PendingDiffInfo>

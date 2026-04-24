@@ -19,6 +19,7 @@ jobs:
           port: ${{ secrets.VM_PORT }}
           script: |
             cd /home/kelvinmbugua/ic-robots            # ← your app directory on the VM
+            git reset --hard origin/main
             git pull origin main
             npm install --production
             pm2 startOrRestart ecosystem.config.cjs --only ic-scalping-bot --update-env
