@@ -21,4 +21,4 @@ jobs:
             cd /home/kelvinmbugua/ic-robots            # ← your app directory on the VM
             git pull origin main
             npm install --production
-            npm run auto
+            npm run pm2:restart || npm run pm2:start
