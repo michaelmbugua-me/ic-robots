@@ -1,220 +1,234 @@
 #!/usr/bin/env node
 
 /**
- * Forex Scalping Bot
- * OANDA + Claude AI Signal Pipeline
- *
- * Usage:
- *   node index.js                  → monitor only (manual trading)
- *   node index.js --auto-execute   → auto-execute signals
- *   node index.js --pair GBP_USD   → change pair (default EUR_USD)
+ * 5-10-20 EMA Scalping Strategy
+ * M5 Execution on EURUSD — IC Markets cTrader
  */
 
-import Anthropic from "@anthropic-ai/sdk";
-import { OandaClient } from "./oanda.js";
-import { calculateIndicators } from "./indicators.js";
-import { formatSignalAlert, formatTradeResult } from "./formatter.js";
+import fs from "fs";
+import { ICMarketsClient } from "./icmarkets.js";
 import { config } from "./config.js";
+import { generateSignal } from "./indicators.js";
+import { RiskManager } from "./risk-manager.js";
 
-const args = process.argv.slice(2);
-const AUTO_EXECUTE = args.includes("--auto-execute");
-const PAIR_ARG = args.indexOf("--pair");
-const INSTRUMENT =
-  PAIR_ARG !== -1 ? args[PAIR_ARG + 1] : config.defaultInstrument;
+const STATE_FILE = "state.json";
+const AUTO_EXECUTE = process.argv.includes("--auto-execute");
+const PAIRS = config.tradingPairs;
 
-const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
-const oanda = new OandaClient(config.oandaApiKey, config.oandaAccountId, config.oandaEnv);
+const icmarkets = new ICMarketsClient();
+const riskManager = new RiskManager(config);
+const pairState = new Map();
 
-let lastSignal = null;
-let activeTradeId = null;
-
-// ─── Main Loop ───────────────────────────────────────────────────────────────
-
-async function runScalpingLoop() {
-  console.log(`\n${"═".repeat(60)}`);
-  console.log(`  🤖 FOREX SCALPING BOT — Powered by Claude AI`);
-  console.log(`${"═".repeat(60)}`);
-  console.log(`  Pair       : ${INSTRUMENT}`);
-  console.log(`  Timeframe  : ${config.granularity}`);
-  console.log(`  Mode       : ${AUTO_EXECUTE ? "🔴 AUTO-EXECUTE" : "🟡 MONITOR ONLY"}`);
-  console.log(`  Interval   : every ${config.pollIntervalSeconds}s`);
-  console.log(`${"═".repeat(60)}\n`);
-
-  if (AUTO_EXECUTE) {
-    console.log(
-      "⚠️  AUTO-EXECUTE is ON. Trades will be placed automatically.\n"
-    );
+function getState(pair) {
+  if (!pairState.has(pair)) {
+    pairState.set(pair, {
+      candleCache: [],
+      activeTrades: [],
+      cooldownCandlesRemaining: 0,
+      lastCandleTime: null,
+      lastLogTime: 0,
+      needsRefresh: true
+    });
   }
-
-  while (true) {
-    try {
-      await tick();
-    } catch (err) {
-      console.error("❌ Error during tick:", err.message);
-    }
-    await sleep(config.pollIntervalSeconds * 1000);
-  }
+  return pairState.get(pair);
 }
 
-// ─── One Tick ────────────────────────────────────────────────────────────────
+async function run() {
+  console.log(`\n${"═".repeat(60)}`);
+  console.log(`  📊 5-10-20 EMA SCALPING BOT — EURUSD M5`);
+  console.log(`  Mode: ${AUTO_EXECUTE ? "🚀 AUTO-EXECUTE" : "💡 MONITOR ONLY"}`);
+  console.log(`${"═".repeat(60)}\n`);
+
+  console.log(`  🔌 Connecting to cTrader (${config.ctraderEnv})...`);
+  await icmarkets.connect();
+  console.log(`  ✅ Connected.`);
+
+  console.log(`  🔐 Authenticating trading account...`);
+  await icmarkets.authenticate();
+  console.log(`  ✅ Authenticated.`);
+
+  loadState();
+
+  for (const pair of PAIRS) {
+    console.log(`  🔄 Reconciling account state for ${pair}...`);
+    await reconcileAccount(pair);
+    console.log(`  📡 Subscribing to live ticks for ${pair}...`);
+    await icmarkets.subscribeTicks(pair);
+  }
+
+  icmarkets.on(2126, (payload) => handleExecutionEvent(payload));
+
+  console.log(`  ⏱️ Poll loop started (${config.pollIntervalSeconds}s interval).`);
+  await tick();
+  setInterval(tick, config.pollIntervalSeconds * 1000);
+}
 
 async function tick() {
   const timestamp = new Date().toLocaleTimeString();
-  process.stdout.write(`[${timestamp}] Fetching candles...`);
+  const now = new Date();
 
-  // 1. Fetch candle data
-  const candles = await oanda.getCandles(INSTRUMENT, config.granularity, 100);
-  if (!candles || candles.length < 50) {
-    console.log(" ⚠️  Not enough candle data.");
+  const day = now.getUTCDay();
+  const activeWindow = getActiveSessionWindowUTC(now);
+  if (day === 0 || day === 6 || !activeWindow) {
+    const utcHour = `${now.getUTCHours()}`.padStart(2, "0");
+    const utcMin = `${now.getUTCMinutes()}`.padStart(2, "0");
+    process.stdout.write(`[${timestamp}] 💤 Outside trading windows (${utcHour}:${utcMin} UTC)\r`);
     return;
   }
 
-  // 2. Calculate indicators
-  const indicators = calculateIndicators(candles);
-  process.stdout.write(` ✓ | Asking Claude...`);
-
-  // 3. Get Claude's signal
-  const signal = await getClaudeSignal(INSTRUMENT, candles, indicators);
-  console.log(` ✓`);
-
-  // 4. Print the signal
-  console.log(formatSignalAlert(signal, indicators, timestamp));
-
-  // 5. Skip if same signal repeated or WAIT
-  if (signal.action === "WAIT") {
-    lastSignal = null;
-    return;
-  }
-
-  if (lastSignal === signal.action) {
-    console.log(`  ↩️  Same signal as before — skipping.\n`);
-    return;
-  }
-
-  lastSignal = signal.action;
-
-  // 6. Auto-execute if enabled
-  if (AUTO_EXECUTE && signal.confidence >= config.minConfidenceToExecute) {
-    await executeTrade(signal, indicators);
-  } else if (AUTO_EXECUTE) {
-    console.log(
-      `  ⏸  Confidence ${signal.confidence}% below threshold (${config.minConfidenceToExecute}%) — skipping execution.\n`
-    );
+  for (const pair of PAIRS) {
+    await tickPair(pair, timestamp).catch(err => console.error(`  ❌ ${pair} error:`, err.message));
   }
 }
 
-// ─── Claude Signal ───────────────────────────────────────────────────────────
+async function tickPair(pair, timestamp) {
+  const state = getState(pair);
+  const now   = Date.now();
+  const isJPY = pair.includes("JPY");
 
-async function getClaudeSignal(instrument, candles, indicators) {
-  const recent = candles.slice(-5).map((c) => ({
-    time: c.time,
-    open: c.mid.o,
-    high: c.mid.h,
-    low: c.mid.l,
-    close: c.mid.c,
-    volume: c.volume,
-  }));
+  // 1. Refresh candles every poll to avoid stale trend/signal state.
+  try {
+    const latestCandles = await icmarkets.getCandles(pair, config.granularity, 100);
+    if (Array.isArray(latestCandles) && latestCandles.length > 0) {
+      state.candleCache = latestCandles;
+    }
+  } catch (err) {
+    if (!state.candleCache.length) {
+      throw err;
+    }
+  }
 
-  const prompt = `You are an expert forex scalping analyst. Analyze the following data and provide a trading signal.
+  if (state.candleCache.length < 22) return;
 
-INSTRUMENT: ${instrument}
-TIMEFRAME: ${config.granularity}
-SESSION: ${getSession()}
+  const currentCandleTime = state.candleCache[state.candleCache.length - 1]?.time ?? null;
+  if (currentCandleTime && currentCandleTime !== state.lastCandleTime) {
+    if (state.lastCandleTime && state.cooldownCandlesRemaining > 0) {
+      state.cooldownCandlesRemaining -= 1;
+    }
+    state.lastCandleTime = currentCandleTime;
+  }
 
-INDICATORS:
-- EMA 9:  ${indicators.ema9.toFixed(5)}
-- EMA 21: ${indicators.ema21.toFixed(5)}
-- RSI(14): ${indicators.rsi.toFixed(2)}
-- ATR(14): ${indicators.atr.toFixed(5)}
-- Current Price: ${indicators.currentPrice.toFixed(5)}
-- EMA Trend: ${indicators.ema9 > indicators.ema21 ? "BULLISH (9 above 21)" : "BEARISH (9 below 21)"}
+  if (state.cooldownCandlesRemaining > 0) return;
 
-RECENT 5 CANDLES (newest last):
-${JSON.stringify(recent, null, 2)}
-
-Based on this data, respond with ONLY a valid JSON object (no markdown, no explanation) in this exact format:
-{
-  "action": "BUY" | "SELL" | "WAIT",
-  "confidence": <number 0-100>,
-  "entry": <price as number>,
-  "stopLoss": <price as number>,
-  "takeProfit": <price as number>,
-  "reasoning": "<one concise sentence>"
-}
-
-Rules:
-- Only signal BUY or SELL if confidence >= 60
-- Stop loss should be 1.5x ATR from entry
-- Take profit should be 2x ATR from entry (minimum 1:1.3 R:R)
-- If RSI > 75 avoid BUY; if RSI < 25 avoid SELL
-- If not in London or New York session, be more conservative`;
-
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 300,
-    messages: [{ role: "user", content: prompt }],
+  // 2. Generate signal
+  const signal = generateSignal(state.candleCache, {
+    pipBuffer: config.strategy.pipBuffer,
+    rrRatio:   config.strategy.rrRatio,
+    minRiskPips: config.strategy.minRiskPips,
+    maxRiskPips: config.strategy.maxRiskPips,
+    emaSeparationMinPips: config.strategy.emaSeparationMinPips,
+    isJPY,
   });
 
-  const text = response.content[0].text.trim();
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    // Fallback if Claude adds any extra text
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) return JSON.parse(jsonMatch[0]);
-    return { action: "WAIT", confidence: 0, reasoning: "Parse error" };
+  // Log status every minute
+  if (now - (state.lastLogTime || 0) > 60000) {
+    console.log(
+      `[${timestamp}] ${pair} | Trend: ${signal.trend.toUpperCase()} | ` +
+      `EMA5: ${signal.ema5} EMA10: ${signal.ema10} EMA20: ${signal.ema20} | ` +
+      `Signal: ${signal.signal.toUpperCase()}`
+    );
+    if (signal.signal !== 'none') console.log(`  → ${signal.reason}`);
+    state.lastLogTime = now;
   }
-}
 
-// ─── Trade Execution ─────────────────────────────────────────────────────────
+  if (signal.signal === 'none') return;
 
-async function executeTrade(signal, indicators) {
-  console.log(`\n  🚀 Executing ${signal.action} trade...`);
+  // 3. Trade gate
+  if (state.activeTrades.length >= config.maxTradesPerPair) return;
+
+  const action = signal.signal.toUpperCase(); // 'BUY' | 'SELL'
+
+  console.log(
+    `\n⚡ [${timestamp}] ${pair} ${action} | ` +
+    `Entry: ${signal.entry} SL: ${signal.sl} TP: ${signal.tp} | ` +
+    `Risk: ${signal.riskPips}p Reward: ${signal.rewardPips}p`
+  );
+
+  if (!AUTO_EXECUTE) return;
 
   try {
-    // Close any existing trade first
-    if (activeTradeId) {
-      await oanda.closeTrade(activeTradeId);
-      console.log(`  ✓ Closed previous trade #${activeTradeId}`);
-      activeTradeId = null;
+    const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry);
+    if (units <= 0) return;
+
+    const res = await icmarkets.openPosition(pair, action, units, signal.sl, signal.tp);
+    if (res && res.positionId) {
+      state.activeTrades.push({ id: String(res.positionId), direction: action, pair, entry: signal.entry, sl: signal.sl, tp: signal.tp });
+      saveState();
     }
-
-    // Calculate position size based on risk config
-    const accountInfo = await oanda.getAccount();
-    const balance = parseFloat(accountInfo.balance);
-    const riskAmount = balance * (config.riskPercentPerTrade / 100);
-    const stopLossPips = Math.abs(signal.entry - signal.stopLoss) * 10000;
-    const units = Math.floor(riskAmount / (stopLossPips * 0.0001));
-    const finalUnits = signal.action === "SELL" ? -units : units;
-
-    const trade = await oanda.createOrder({
-      instrument: INSTRUMENT,
-      units: finalUnits,
-      stopLoss: signal.stopLoss.toFixed(5),
-      takeProfit: signal.takeProfit.toFixed(5),
-    });
-
-    activeTradeId = trade.id;
-    console.log(formatTradeResult(trade, signal, balance, units));
   } catch (err) {
-    console.error(`  ❌ Trade execution failed: ${err.message}\n`);
+    console.error(`  ❌ Trade failed:`, err.message);
   }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getSession() {
-  const hour = new Date().getUTCHours();
-  if (hour >= 7 && hour < 16) return "London";
-  if (hour >= 13 && hour < 22) return "New York";
-  if (hour >= 0 && hour < 8) return "Tokyo/Sydney";
-  return "Off-hours";
+function handleExecutionEvent(payload) {
+  if (payload.executionType === "DEAL_FILLED" || payload.executionType === 4) {
+    const deal = payload.deal;
+    if (deal && deal.closePositionDetail) {
+      const positionId = String(deal.positionId);
+      let matchedTrade = null;
+      console.log(`  🔔  Position ${positionId} closed.`);
+      for (const [, state] of pairState) {
+        const found = state.activeTrades.find(t => t.id === positionId);
+        if (found) matchedTrade = found;
+        state.activeTrades = state.activeTrades.filter(t => t.id !== positionId);
+      }
+
+      if (matchedTrade && config.strategy.cooldownCandlesAfterLoss > 0) {
+        let exitPrice = Number(deal.executionPrice ?? 0);
+        if (exitPrice > 1000) exitPrice = exitPrice / 100000;
+        const pipSize = matchedTrade.pair?.includes("JPY") ? 0.01 : 0.0001;
+        const epsilon = pipSize * 2;
+        if (Math.abs(exitPrice - matchedTrade.sl) <= epsilon) {
+          const state = getState(matchedTrade.pair);
+          state.cooldownCandlesRemaining = Math.max(state.cooldownCandlesRemaining, config.strategy.cooldownCandlesAfterLoss);
+        }
+      }
+
+      saveState();
+    }
+  }
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function reconcileAccount(pair) {
+  const state = getState(pair);
+  try {
+    const positions = await icmarkets.reconcile();
+    const symbolId = icmarkets._resolveSymbolId(pair);
+    state.activeTrades = positions
+      .filter(p => p.tradeData && String(p.tradeData.symbolId) === String(symbolId))
+      .map(p => ({ id: String(p.positionId), direction: p.tradeData.tradeSide, pair }));
+    saveState();
+  } catch (err) {}
 }
 
-// ─── Run ─────────────────────────────────────────────────────────────────────
-runScalpingLoop().catch(console.error);
+function loadState() {
+  if (fs.existsSync(STATE_FILE)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+      if (data.activeTrades) {
+        // Migration: flat activeTrades array — no per-pair state needed
+      }
+    } catch (err) {}
+  }
+}
+
+function saveState() {
+  const allTrades = [];
+  for (const [, state] of pairState) allTrades.push(...state.activeTrades);
+  fs.writeFileSync(STATE_FILE, JSON.stringify({ activeTrades: allTrades }, null, 2));
+}
+
+function getActiveSessionWindowUTC(now) {
+  const windows = config.sessionWindowsUTC;
+  if (!Array.isArray(windows) || windows.length === 0) {
+    const h = now.getUTCHours() + (now.getUTCMinutes() / 60);
+    return h >= config.sessionStartUTC && h < config.sessionEndUTC ? { name: "legacy" } : null;
+  }
+
+  const h = now.getUTCHours() + (now.getUTCMinutes() / 60);
+  return windows.find(w => h >= w.start && h < w.end) || null;
+}
+
+run().catch(console.error);

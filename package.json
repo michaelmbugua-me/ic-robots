@@ -1,16 +1,47 @@
 {
-  "name": "forex-scalping-bot",
+  "name": "icmarkets-scalping-bot",
   "version": "1.0.0",
-  "description": "AI-powered forex scalping bot using Claude + OANDA",
+  "description": "AI forex scalping bot — Local Ollama AI + IC Markets cTrader Open API",
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "auth": "node auth.js",
+    "symbols": "node get-symbols.js",
     "start": "node index.js",
-    "auto": "node index.js --auto-execute",
+    "auto": "SESSION_WINDOW_MODE=all_windows EMA_SEPARATION_MIN_PIPS=0.5 node index.js --auto-execute",
+    "download": "node download-history.js",
+    "backtest": "node backtest-multi.js",
+    "backtest:ny": "SESSION_WINDOW_MODE=ny_only node backtest-multi.js",
+    "backtest:ny-quality": "SESSION_WINDOW_MODE=ny_quality EMA_SEPARATION_MIN_PIPS=0.5 node backtest-multi.js",
+    "backtest:ny-trim": "SESSION_WINDOW_MODE=ny_trimmed node backtest-multi.js",
+    "backtest:all": "SESSION_WINDOW_MODE=all_windows EMA_SEPARATION_MIN_PIPS=0.5 node backtest-multi.js",
+    "start:ny-quality": "SESSION_WINDOW_MODE=ny_quality EMA_SEPARATION_MIN_PIPS=0.5 node index.js",
+    "auto:ny-quality": "SESSION_WINDOW_MODE=ny_quality EMA_SEPARATION_MIN_PIPS=0.5 node index.js --auto-execute",
+    "compare:modes": "node compare-modes.js",
+    "compare:modes:prune": "node prune-mode-snapshots.js",
+    "compare:modes:run": "node compare-modes.js && node prune-mode-snapshots.js",
+    "backtest-multi-mock": "node backtest-multi.js --mock",
+    "backtest-mock": "node backtest.js --mock",
     "gbp": "node index.js --pair GBP_USD",
-    "gbp-auto": "node index.js --pair GBP_USD --auto-execute"
+    "gbp-auto": "node index.js --pair GBP_USD --auto-execute",
+    "jpn": "node index.js --pair USD_JPY",
+    "jpn-auto": "node index.js --pair USD_JPY --auto-execute",
+    "analyze": "node trade-analyzer.js && node generate-report.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop ic-scalping-bot",
+    "pm2:restart": "pm2 restart ic-scalping-bot",
+    "pm2:logs": "pm2 logs ic-scalping-bot",
+    "pm2:status": "pm2 status",
+    "pm2:kill": "pm2 kill",
+    "pm2:delete": "pm2 delete ic-scalping-bot"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0"
+    "dotenv": "^17.3.1",
+    "long": "^5.3.2",
+    "protobufjs": "^8.0.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "pm2": "^5.3.0"
   }
 }

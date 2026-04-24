@@ -1,8 +1,0 @@
-ic-markets/state.json
-state.json
-.env
-.env.local
-logs/
-*.log
-node_modules/
-.pm2/

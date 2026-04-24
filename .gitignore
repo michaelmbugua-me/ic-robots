@@ -1,14 +1,8 @@
-# Ignore node_modules folder
-node_modules/
-
-# Ignore all log files
-*.log
-
-# Ignore OS files
-.DS_Store
-
-# Ignore environment variables
+ic-markets/state.json
+state.json
 .env
-
-# Ignore pnpm lock file
-pnpm-lock.yaml
+.env.local
+logs/
+*.log
+node_modules/
+.pm2/
