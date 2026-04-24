@@ -40,6 +40,7 @@ jobs:
             git reset --hard origin/main
             
             if [ -f "package.json" ]; then
+              mkdir -p logs
               npm install --omit=dev
               pm2 startOrRestart ecosystem.config.cjs --only ic-scalping-bot --update-env
               pm2 save

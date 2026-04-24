@@ -13,8 +13,8 @@ module.exports = {
         EMA_SEPARATION_MIN_PIPS: '0.5'
       },
       args: '--auto-execute',
-      error_file: 'logs/err.log',
-      out_file: 'logs/out.log',
+      error_file: './logs/err.log',
+      out_file: './logs/out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
       autorestart: true,
