@@ -19,6 +19,7 @@ jobs:
           port: ${{ secrets.VM_PORT }}
           script: |
             cd /home/kelvinmbugua/ic-robots/ic-markets
+            pwd
             git fetch origin main
             git reset --hard origin/main
             npm install --omit=dev
