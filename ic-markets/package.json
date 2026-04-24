@@ -26,12 +26,22 @@
     "gbp-auto": "node index.js --pair GBP_USD --auto-execute",
     "jpn": "node index.js --pair USD_JPY",
     "jpn-auto": "node index.js --pair USD_JPY --auto-execute",
-    "analyze": "node trade-analyzer.js && node generate-report.js"
+    "analyze": "node trade-analyzer.js && node generate-report.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop ic-scalping-bot",
+    "pm2:restart": "pm2 restart ic-scalping-bot",
+    "pm2:logs": "pm2 logs ic-scalping-bot",
+    "pm2:status": "pm2 status",
+    "pm2:kill": "pm2 kill",
+    "pm2:delete": "pm2 delete ic-scalping-bot"
   },
   "dependencies": {
     "dotenv": "^17.3.1",
     "long": "^5.3.2",
     "protobufjs": "^8.0.1",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "pm2": "^5.3.0"
   }
 }
