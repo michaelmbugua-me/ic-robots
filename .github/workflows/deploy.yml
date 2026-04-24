@@ -20,12 +20,30 @@ jobs:
           script: |
             mkdir -p /home/kelvinmbugua/ic-robots
             cd /home/kelvinmbugua/ic-robots
-            if [ ! -d "ic-markets/.git" ]; then
+            
+            # If directory exists but is not a git repo, clean it
+            if [ -d "ic-markets" ] && [ ! -d "ic-markets/.git" ]; then
+              echo "Directory ic-markets exists but is not a git repo. Cleaning..."
+              rm -rf ic-markets
+            fi
+
+            if [ ! -d "ic-markets" ]; then
+              echo "Cloning repository..."
               git clone https://github.com/${{ github.repository }}.git ic-markets
             fi
+            
             cd ic-markets
+            echo "Current directory: $(pwd)"
+            ls -la
+
             git fetch origin main
             git reset --hard origin/main
-            npm install --omit=dev
-            pm2 startOrRestart ecosystem.config.cjs --only ic-scalping-bot --update-env
-            pm2 save
+            
+            if [ -f "package.json" ]; then
+              npm install --omit=dev
+              pm2 startOrRestart ecosystem.config.cjs --only ic-scalping-bot --update-env
+              pm2 save
+            else
+              echo "Error: package.json not found in $(pwd)"
+              exit 1
+            fi
