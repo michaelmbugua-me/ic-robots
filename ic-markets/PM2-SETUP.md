@@ -21,7 +21,7 @@ pnpm install
 pnpm pm2:start
 ```
 
-This uses the configuration from `ecosystem.config.js`:
+This uses the configuration from `ecosystem.config.cjs`:
 - Mode: `ny_quality` 
 - Auto-execute: enabled
 - Logs: `logs/out.log` and `logs/err.log`
@@ -58,7 +58,7 @@ pnpm pm2:kill
 
 ## Configuration
 
-The bot is configured in `ecosystem.config.js`. Key settings:
+The bot is configured in `ecosystem.config.cjs`. Key settings:
 
 ```javascript
 env: {
@@ -71,11 +71,11 @@ args: '--auto-execute',  // Remove or comment out for monitor-only mode
 
 ### Customizing the Ecosystem Config
 
-To use a different mode, edit `ecosystem.config.js` and restart:
+To use a different mode, edit `ecosystem.config.cjs` and restart:
 
 ```bash
 # Example: Use all_windows mode
-# Edit SESSION_WINDOW_MODE in ecosystem.config.js
+# Edit SESSION_WINDOW_MODE in ecosystem.config.cjs
 pnpm pm2:restart
 
 # Or delete and restart with new config
@@ -109,7 +109,7 @@ pm2 save
 pm2 resurrect
 
 # Start bot at system startup (requires permissions)
-pm2 start ecosystem.config.js --update-env
+pm2 start ecosystem.config.cjs --update-env
 sudo pm2 startup
 pm2 save
 ```
