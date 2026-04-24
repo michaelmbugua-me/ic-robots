@@ -50,6 +50,7 @@ export const config = {
   tradingPairs:        ["EUR_USD"],
   granularity:         "M5",
   pollIntervalSeconds: 10,
+  connectionTimeoutSeconds: 60,
 
   // ─── Session Hours (EURUSD M5 windows, UTC) ──────────────────────────────
   // A/B switch: SESSION_WINDOW_MODE=ny_only|ny_quality|ny_trimmed|all_windows

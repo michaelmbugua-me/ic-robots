@@ -9,7 +9,7 @@ module.exports = {
       ignore_watch: ['node_modules', '*.json', 'history_*.json', 'activity.log'],
       env: {
         NODE_ENV: 'production',
-        SESSION_WINDOW_MODE: 'ny_quality',
+        SESSION_WINDOW_MODE: 'all_windows',
         EMA_SEPARATION_MIN_PIPS: '0.5'
       },
       args: '--auto-execute',
