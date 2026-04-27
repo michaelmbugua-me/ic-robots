@@ -350,6 +350,35 @@ export class ICMarketsClient {
   // ─── Orders ────────────────────────────────────────────────────────────────
 
   /**
+   * High-level wrapper for index.js
+   */
+  async openPosition(pair, action, units, stopLoss, takeProfit, entryPriceHint) {
+    const isBuy = action === "BUY";
+    const signedUnits = isBuy ? units : -units;
+    
+    let entryPrice = entryPriceHint;
+    
+    // If no hint provided, we need the latest price for relative SL/TP calculation
+    if (!entryPrice) {
+      const candles = await this.getCandles(pair, "M1", 1);
+      entryPrice = candles[0].mid.c;
+    }
+
+    const res = await this.createOrder({
+      instrument: pair,
+      units: signedUnits,
+      stopLoss,
+      takeProfit,
+      entryPrice
+    });
+
+    return {
+      positionId: res.id,
+      price: res.price
+    };
+  }
+
+  /**
    * Place a market order with bracket stop loss + take profit
    *
    * @param {object} p
@@ -410,8 +439,9 @@ export class ICMarketsClient {
     // Wait for execution OR error — whichever comes first
     const result = await Promise.race([execPromise, errPromise]);
 
-    if (result._eventType === PT.ORDER_ERROR_EVENT) {
-      throw new Error(`Order rejected: ${result.errorCode} — ${result.description ?? ""}`);
+    if (!result || result._eventType === PT.ORDER_ERROR_EVENT) {
+      const errorMsg = result ? `Order rejected: ${result.errorCode} — ${result.description ?? ""}` : "Order timeout/unknown error";
+      throw new Error(errorMsg);
     }
 
     const deal     = result.deal     ?? {};

@@ -150,7 +150,9 @@ async function tickPair(pair, timestamp) {
     const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry);
     if (units <= 0) return;
 
-    const res = await icmarkets.openPosition(pair, action, units, signal.sl, signal.tp);
+    // Use the signal's entry price for more accurate relative SL/TP if possible,
+    // though icmarkets.openPosition will fetch current market price for reliability.
+    const res = await icmarkets.openPosition(pair, action, units, signal.sl, signal.tp, signal.entry);
     if (res && res.positionId) {
       state.activeTrades.push({ id: String(res.positionId), direction: action, pair, entry: signal.entry, sl: signal.sl, tp: signal.tp });
       saveState();
