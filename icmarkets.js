@@ -353,6 +353,9 @@ export class ICMarketsClient {
    * High-level wrapper for index.js
    */
   async openPosition(pair, action, units, stopLoss, takeProfit, entryPriceHint) {
+    // Ensure we have symbol details (for stepVolume/minVolume) before opening
+    await this.getSymbol(pair);
+
     const isBuy = action === "BUY";
     const signedUnits = isBuy ? units : -units;
     
@@ -394,7 +397,22 @@ export class ICMarketsClient {
     const absUnits = Math.abs(units);
 
     // cTrader volume: 1 unit = 100 in their internal format (0.01 units)
-    const volume   = absUnits * 100;
+    let volume     = absUnits * 100;
+    
+    // Ensure volume is a multiple of stepVolume (Phase 4 fix)
+    const symbol = this.symbols.get(instrument);
+    if (symbol && symbol.stepVolume) {
+      const internalStep = symbol.stepVolume * 100;
+      const internalMin  = (symbol.minVolume || 0) * 100;
+      
+      // Round down to nearest step
+      volume = Math.floor(volume / internalStep) * internalStep;
+      
+      // Ensure it's at least the minimum volume
+      if (volume < internalMin) {
+        volume = internalMin;
+      }
+    }
     
     const payload = {
       payloadType: PT.NEW_ORDER_REQ,
