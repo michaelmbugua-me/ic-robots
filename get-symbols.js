@@ -13,7 +13,7 @@ import { config } from "./config.js";
 
 const PT_APP_AUTH_REQ     = 2100;
 const PT_ACCOUNT_AUTH_REQ = 2102;
-const PT_SYMBOLS_LIST_REQ = 2121;
+const PT_SYMBOLS_LIST_REQ = 2114; // ProtoOASymbolsListReq
 const PT_ERROR_RES        = 2142;
 const PT_HEARTBEAT        = 51;
 
@@ -103,7 +103,7 @@ async function run() {
 
   const symbols = res.symbol ?? [];
   const found   = [];
-
+  
   for (const sym of symbols) {
     // Strip any slashes or spaces: "EUR/USD" or "EUR USD" → "EURUSD"
     const clean = (sym.symbolName ?? "").replace(/[^A-Z]/gi, "").toUpperCase();

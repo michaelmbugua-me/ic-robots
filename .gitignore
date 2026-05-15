@@ -6,3 +6,7 @@ logs/
 *.log
 node_modules/
 .pm2/
+history_*.json
+risk-state.json
+trades_backtest.json
+report.html

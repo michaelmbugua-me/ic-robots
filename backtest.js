@@ -3,7 +3,7 @@
  */
 
 import fs from "fs";
-import { generateSignal } from "./indicators.js";
+import { detectHigherTimeframeTrend, generateSignal } from "./indicators.js";
 import { config } from "./config.js";
 
 const PAIR = config.defaultInstrument || "EUR_USD";
@@ -41,11 +41,27 @@ async function main() {
   let tradeHistory = [];
   let cooldownCandlesRemaining = 0;
   const windowM5 = 100;
+  const htfConfig = config.strategy.higherTimeframeTrend ?? {};
+  const higherTimeframeCandles = htfConfig.enabled ? buildHourlyCandles(allCandles) : [];
+  let higherTimeframeIndex = 0;
 
   for (let i = windowM5; i < allCandles.length; i++) {
     const currentM5Candles = allCandles.slice(i - windowM5, i);
     const nextCandle = allCandles[i];
     const timestamp = nextCandle.time;
+    while (
+      higherTimeframeIndex < higherTimeframeCandles.length &&
+      new Date(higherTimeframeCandles[higherTimeframeIndex].endTime) <= new Date(timestamp)
+    ) {
+      higherTimeframeIndex++;
+    }
+
+    const higherTimeframe = htfConfig.enabled
+      ? detectHigherTimeframeTrend(
+          higherTimeframeCandles.slice(Math.max(0, higherTimeframeIndex - (htfConfig.lookbackCandles || 250)), higherTimeframeIndex),
+          { emaPeriod: htfConfig.emaPeriod || 200, requireSlope: htfConfig.requireSlope ?? true },
+        )
+      : { trend: null };
 
 
     // Manage Trades
@@ -81,13 +97,15 @@ async function main() {
       minRiskPips: config.strategy.minRiskPips,
       maxRiskPips: config.strategy.maxRiskPips,
       emaSeparationMinPips: config.strategy.emaSeparationMinPips,
+      higherTimeframeTrend: htfConfig.enabled ? higherTimeframe.trend : null,
       isJPY:     PAIR.includes("JPY"),
     });
 
     if (signal.signal === 'none' || activeTrades.length >= config.maxTradesPerPair) continue;
 
     const action = signal.signal.toUpperCase();
-    const units = Math.min(10000, Math.floor((INITIAL_BALANCE * 0.02) / (signal.riskPips * (10/100000))));
+    const riskPerTrade = INITIAL_BALANCE * ((config.risk.riskPerTradePercent ?? 1) / 100);
+    const units = Math.min(10000, Math.floor(riskPerTrade / (signal.riskPips * (10/100000))));
 
     const trade = {
       direction: action,
@@ -126,6 +144,12 @@ async function main() {
       cooldownCandlesAfterLoss: config.strategy.cooldownCandlesAfterLoss,
       minRiskPips: config.strategy.minRiskPips,
       maxRiskPips: config.strategy.maxRiskPips,
+      riskPerTradePercent: config.risk.riskPerTradePercent,
+      higherTimeframeTrend: htfConfig.enabled ? {
+        granularity: htfConfig.granularity || config.higherTimeframe,
+        emaPeriod: htfConfig.emaPeriod,
+        requireSlope: htfConfig.requireSlope,
+      } : null,
     },
     trades: tradeHistory,
     summary: {
@@ -153,6 +177,36 @@ function isTradeWindowUTC(dateObj) {
   }
 
   return h >= config.sessionStartUTC && h < config.sessionEndUTC;
+}
+
+function buildHourlyCandles(candles) {
+  const groups = new Map();
+
+  for (const candle of candles) {
+    const date = new Date(candle.time);
+    date.setUTCMinutes(0, 0, 0);
+    const key = date.toISOString();
+    const mid = candle.mid;
+    if (!mid) continue;
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        time: key,
+        endTime: new Date(date.getTime() + 60 * 60 * 1000).toISOString(),
+        volume: candle.volume ?? 0,
+        mid: { o: mid.o, h: mid.h, l: mid.l, c: mid.c },
+      });
+      continue;
+    }
+
+    const group = groups.get(key);
+    group.mid.h = Math.max(parseFloat(group.mid.h), parseFloat(mid.h)).toFixed(5);
+    group.mid.l = Math.min(parseFloat(group.mid.l), parseFloat(mid.l)).toFixed(5);
+    group.mid.c = mid.c;
+    group.volume += candle.volume ?? 0;
+  }
+
+  return Array.from(groups.values()).sort((a, b) => new Date(a.time) - new Date(b.time));
 }
 
 main().catch(console.error);

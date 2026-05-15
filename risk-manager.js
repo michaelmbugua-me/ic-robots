@@ -21,11 +21,12 @@ export class RiskManager {
   constructor() {
     // KES-denominated risk parameters (from config, with defaults)
     this.accountCapitalKES    = config.risk.accountCapitalKES;
+    this.riskPerTradePercent  = config.risk.riskPerTradePercent ?? 1;
+    this.enforceDailyStopLoss = config.risk.enforceDailyStopLoss ?? true;
     this.dailyStopLossKES     = config.risk.dailyStopLossKES;
     this.dailyProfitTargetKES = config.risk.dailyProfitTargetKES;
     this.maxLeverage          = config.risk.maxLeverage;
     this.maxOpenTrades        = config.maxTotalTrades || config.risk.maxOpenTrades || 1;
-    this.minRiskReward        = config.risk.minRiskReward;
 
     // Daily tracking (reset each UTC day)
     this.tradingEnabled       = true;
@@ -52,8 +53,8 @@ export class RiskManager {
       return { allowed: false, reason: "Trading disabled for today (daily limit reached)" };
     }
 
-    // Hard cap: daily realized loss >= 1,000 KES
-    if (this.dailyRealizedLoss >= this.dailyStopLossKES) {
+    // Optional hard cap: daily realized loss >= configured daily limit.
+    if (this.enforceDailyStopLoss && this.dailyRealizedLoss >= this.dailyStopLossKES) {
       this.tradingEnabled = false;
       this._saveState();
       return { allowed: false, reason: `Daily stop-loss hit: ${this.dailyRealizedLoss.toFixed(2)} KES lost (limit: ${this.dailyStopLossKES} KES)` };
@@ -115,8 +116,8 @@ export class RiskManager {
     }
 
     // Volume = riskAmountKES / (SL_Pips × pipValuePerUnit_KES)
-    // We risk only a portion of the daily stop loss per trade
-    const riskAmountPerTradeKES = this.dailyStopLossKES / Math.max(1, this.maxOpenTrades);
+    // Target model: risk a fixed percentage of account capital per trade.
+    const riskAmountPerTradeKES = this.accountCapitalKES * (this.riskPerTradePercent / 100);
     let units = Math.floor(riskAmountPerTradeKES / (slPips * pipValuePerUnitKES));
 
     // Leverage constraint: position notional must not exceed accountCapital × maxLeverage
@@ -130,26 +131,13 @@ export class RiskManager {
     }
 
     // Never allow more than config.maxPositionSizeUnits
-    if (units > config.maxPositionSizeUnits) {
+    if (config.maxPositionSizeUnits && units > config.maxPositionSizeUnits) {
       units = config.maxPositionSizeUnits;
     }
 
     return units;
   }
 
-  // ─── Risk:Reward Validation ──────────────────────────────────────────────────
-
-  /**
-   * Validate that the signal meets minimum R:R ratio of 1:1.5
-   */
-  validateRiskReward(signal) {
-    if (!signal.entry || !signal.stopLoss || !signal.takeProfit) return false;
-    const risk   = Math.abs(signal.entry - signal.stopLoss);
-    const reward = Math.abs(signal.takeProfit - signal.entry);
-    if (risk <= 0) return false;
-    const rr = reward / risk;
-    return rr >= this.minRiskReward;
-  }
 
   // ─── Trade Lifecycle Tracking ────────────────────────────────────────────────
 
@@ -194,7 +182,7 @@ export class RiskManager {
     console.log(`     Profit: +${this.dailyRealizedProfit.toFixed(2)} KES | Loss: -${this.dailyRealizedLoss.toFixed(2)} KES | Open: ${this.openTradeCount}`);
 
     // Check if we should stop for the day
-    if (this.dailyRealizedLoss >= this.dailyStopLossKES) {
+    if (this.enforceDailyStopLoss && this.dailyRealizedLoss >= this.dailyStopLossKES) {
       this.tradingEnabled = false;
       console.log(`  🛑 RiskManager: DAILY STOP-LOSS HIT. Trading disabled until next UTC day.`);
     }

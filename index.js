@@ -8,7 +8,7 @@
 import fs from "fs";
 import { ICMarketsClient } from "./icmarkets.js";
 import { config } from "./config.js";
-import { generateSignal } from "./indicators.js";
+import { detectHigherTimeframeTrend, generateNYAsianContinuationSignal, generateSignal } from "./indicators.js";
 import { RiskManager } from "./risk-manager.js";
 
 const STATE_FILE = "state.json";
@@ -23,11 +23,13 @@ function getState(pair) {
   if (!pairState.has(pair)) {
     pairState.set(pair, {
       candleCache: [],
+      higherTimeframeCandleCache: [],
       activeTrades: [],
+      pendingOrders: [],
+      sessionTradeCounts: new Map(),
       cooldownCandlesRemaining: 0,
       lastCandleTime: null,
       lastLogTime: 0,
-      needsRefresh: true
     });
   }
   return pairState.get(pair);
@@ -35,8 +37,9 @@ function getState(pair) {
 
 async function run() {
   console.log(`\n${"═".repeat(60)}`);
-  console.log(`  📊 5-10-20 EMA SCALPING BOT — EURUSD M5`);
+  console.log(`  📊 EURUSD M5 BOT — ${config.strategy.mode.toUpperCase()}`);
   console.log(`  Mode: ${AUTO_EXECUTE ? "🚀 AUTO-EXECUTE" : "💡 MONITOR ONLY"}`);
+  console.log(`  Session: ${config.sessionWindowMode} | Risk: ${config.risk.riskPerTradePercent}% per trade`);
   console.log(`${"═".repeat(60)}\n`);
 
   console.log(`  🔌 Connecting to cTrader (${config.ctraderEnv})...`);
@@ -46,8 +49,6 @@ async function run() {
   console.log(`  🔐 Authenticating trading account...`);
   await icmarkets.authenticate();
   console.log(`  ✅ Authenticated.`);
-
-  loadState();
 
   for (const pair of PAIRS) {
     console.log(`  🔄 Reconciling account state for ${pair}...`);
@@ -88,7 +89,10 @@ async function tickPair(pair, timestamp) {
 
   // 1. Refresh candles every poll to avoid stale trend/signal state.
   try {
-    const latestCandles = await icmarkets.getCandles(pair, config.granularity, 100);
+    const candleCount = config.strategy.mode === "ny_asian_continuation"
+      ? (config.strategy.nyAsianContinuation?.lookbackCandles ?? 220)
+      : 100;
+    const latestCandles = await icmarkets.getCandles(pair, config.granularity, candleCount);
     if (Array.isArray(latestCandles) && latestCandles.length > 0) {
       state.candleCache = latestCandles;
     }
@@ -98,6 +102,30 @@ async function tickPair(pair, timestamp) {
     }
   }
 
+  const htfConfig = config.strategy.higherTimeframeTrend ?? {};
+  let higherTimeframe = { trend: 'neutral', ema: null, close: null, reason: 'Higher-timeframe filter disabled' };
+  if (htfConfig.enabled) {
+    try {
+      const htfCandles = await icmarkets.getCandles(
+        pair,
+        htfConfig.granularity || config.higherTimeframe || "H1",
+        htfConfig.lookbackCandles || 250,
+      );
+      if (Array.isArray(htfCandles) && htfCandles.length > 0) {
+        state.higherTimeframeCandleCache = htfCandles;
+      }
+    } catch (err) {
+      if (!state.higherTimeframeCandleCache.length) {
+        console.error(`  ⚠️  ${pair} HTF data unavailable: ${err.message}`);
+      }
+    }
+
+    higherTimeframe = detectHigherTimeframeTrend(state.higherTimeframeCandleCache, {
+      emaPeriod: htfConfig.emaPeriod || 200,
+      requireSlope: htfConfig.requireSlope ?? true,
+    });
+  }
+
   if (state.candleCache.length < 22) return;
 
   const currentCandleTime = state.candleCache[state.candleCache.length - 1]?.time ?? null;
@@ -105,26 +133,28 @@ async function tickPair(pair, timestamp) {
     if (state.lastCandleTime && state.cooldownCandlesRemaining > 0) {
       state.cooldownCandlesRemaining -= 1;
     }
+    for (const trade of state.activeTrades) {
+      trade.ageBars = (trade.ageBars ?? 0) + 1;
+    }
     state.lastCandleTime = currentCandleTime;
   }
 
   if (state.cooldownCandlesRemaining > 0) return;
 
+  await manageActiveTradeTimeExits(pair, state);
+  await processPendingOrders(pair, state);
+  if (state.activeTrades.length >= config.maxTradesPerPair) return;
+
   // 2. Generate signal
-  const signal = generateSignal(state.candleCache, {
-    pipBuffer: config.strategy.pipBuffer,
-    rrRatio:   config.strategy.rrRatio,
-    minRiskPips: config.strategy.minRiskPips,
-    maxRiskPips: config.strategy.maxRiskPips,
-    emaSeparationMinPips: config.strategy.emaSeparationMinPips,
-    isJPY,
-  });
+  const activeWindow = getActiveSessionWindowUTC(new Date());
+  const signal = generateStrategySignal(state, higherTimeframe, activeWindow, isJPY);
 
   // Log status every minute
   if (now - (state.lastLogTime || 0) > 60000) {
     console.log(
       `[${timestamp}] ${pair} | Trend: ${signal.trend.toUpperCase()} | ` +
-      `EMA5: ${signal.ema5} EMA10: ${signal.ema10} EMA20: ${signal.ema20} | ` +
+      `HTF: ${higherTimeframe.trend.toUpperCase()} | ` +
+      `Strategy: ${config.strategy.mode} | Pending: ${state.pendingOrders.length} | ` +
       `Signal: ${signal.signal.toUpperCase()}`
     );
     if (signal.signal !== 'none') console.log(`  → ${signal.reason}`);
@@ -134,9 +164,9 @@ async function tickPair(pair, timestamp) {
   if (signal.signal === 'none') return;
 
   // 3. Trade gate
-  if (state.activeTrades.length >= config.maxTradesPerPair) return;
+  if (state.activeTrades.length >= config.maxTradesPerPair || state.pendingOrders.length > 0) return;
 
-  const action = signal.signal.toUpperCase(); // 'BUY' | 'SELL'
+  const action = signal.direction || signal.signal.toUpperCase(); // 'BUY' | 'SELL'
 
   console.log(
     `\n⚡ [${timestamp}] ${pair} ${action} | ` +
@@ -144,9 +174,28 @@ async function tickPair(pair, timestamp) {
     `Risk: ${signal.riskPips}p Reward: ${signal.rewardPips}p`
   );
 
+  if (signal.signal === "buy_stop" || signal.signal === "sell_stop") {
+    if (!AUTO_EXECUTE) return;
+    addPendingOrder(state, signal);
+    saveState();
+    await processPendingOrders(pair, state);
+    return;
+  }
+
+  if (!["buy", "sell"].includes(signal.signal)) {
+    console.log(`  ⚠️  Unsupported live signal type "${signal.signal}" ignored.`);
+    return;
+  }
+
   if (!AUTO_EXECUTE) return;
 
   try {
+    const gate = riskManager.canTrade();
+    if (!gate.allowed) {
+      console.log(`  ⛔ Risk gate blocked trade: ${gate.reason}`);
+      return;
+    }
+
     const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry);
     if (units <= 0) return;
 
@@ -155,6 +204,7 @@ async function tickPair(pair, timestamp) {
     const res = await icmarkets.openPosition(pair, action, units, signal.sl, signal.tp, signal.entry);
     if (res && res.positionId) {
       state.activeTrades.push({ id: String(res.positionId), direction: action, pair, entry: signal.entry, sl: signal.sl, tp: signal.tp });
+      riskManager.onTradeOpened(String(res.positionId), pair, action, signal.entry, signal.sl, signal.tp, units);
       saveState();
     }
   } catch (err) {
@@ -163,6 +213,197 @@ async function tickPair(pair, timestamp) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function generateStrategySignal(state, higherTimeframe, activeWindow, isJPY) {
+  const htfConfig = config.strategy.higherTimeframeTrend ?? {};
+  const htfTrend = htfConfig.enabled ? higherTimeframe.trend : null;
+
+  if (config.strategy.mode === "ny_asian_continuation") {
+    const cfg = config.strategy.nyAsianContinuation ?? {};
+    if (Array.isArray(cfg.allowedSessionNames) && cfg.allowedSessionNames.length > 0 && !cfg.allowedSessionNames.includes(activeWindow?.name)) {
+      return noSignal(`NY Asian continuation blocked outside allowed session (${activeWindow?.name ?? "none"})`);
+    }
+
+    const sessionKey = getSessionKey(new Date(), activeWindow);
+    if ((state.sessionTradeCounts.get(sessionKey) ?? 0) >= (cfg.maxTradesPerSession ?? 1)) {
+      return noSignal(`NY Asian continuation max trades reached for ${sessionKey}`);
+    }
+
+    return generateNYAsianContinuationSignal(state.candleCache, {
+      ...cfg,
+      asianRange: getAsianRangeFromCandles(state.candleCache, new Date(), cfg),
+      higherTimeframeTrend: htfTrend,
+      isJPY,
+    });
+  }
+
+  return generateSignal(state.candleCache, {
+    pipBuffer: config.strategy.pipBuffer,
+    rrRatio:   config.strategy.rrRatio,
+    minRiskPips: config.strategy.minRiskPips,
+    maxRiskPips: config.strategy.maxRiskPips,
+    emaSeparationMinPips: config.strategy.emaSeparationMinPips,
+    higherTimeframeTrend: htfTrend,
+    isJPY,
+  });
+}
+
+function noSignal(reason) {
+  return { signal: "none", trend: "neutral", entry: null, sl: null, tp: null, riskPips: null, rewardPips: null, reason };
+}
+
+function addPendingOrder(state, signal) {
+  const latest = state.candleCache.at(-1);
+  const setupMs = latest?.time ? new Date(latest.time).getTime() : Date.now();
+  const expiresAfterBars = signal.pendingExpiryBars ?? 3;
+  const activeWindow = getActiveSessionWindowUTC(new Date());
+  const sessionKey = getSessionKey(new Date(), activeWindow);
+
+  state.pendingOrders.push({
+    direction: signal.direction,
+    entry: signal.entry,
+    sl: signal.sl,
+    tp: signal.tp,
+    setupTime: signal.setupTime,
+    setupCandleTime: latest?.time,
+    expiresAtMs: setupMs + expiresAfterBars * 5 * 60_000,
+    expiresAfterBars,
+    timeExitBars: signal.timeExitBars,
+    forceExitUTC: signal.forceExitUTC,
+    sessionKey,
+    strategy: signal.strategy,
+    levelName: signal.levelName,
+    levelPrice: signal.levelPrice,
+    riskPips: signal.riskPips,
+    rewardPips: signal.rewardPips,
+    reason: signal.reason,
+  });
+  console.log(`  📌 Pending ${signal.direction} stop armed @ ${signal.entry} (expires in ${expiresAfterBars} M5 bars).`);
+}
+
+async function processPendingOrders(pair, state) {
+  if (!AUTO_EXECUTE || state.pendingOrders.length === 0) return;
+  const latest = normalizeLiveCandle(state.candleCache.at(-1));
+  const latestTime = state.candleCache.at(-1)?.time;
+  if (!latest) return;
+
+  const kept = [];
+  for (const order of state.pendingOrders) {
+    if (latest.date.getTime() > order.expiresAtMs) {
+      console.log(`  ⌛ Pending ${order.direction} stop expired @ ${order.entry}`);
+      continue;
+    }
+    if (latestTime && order.setupCandleTime && latestTime === order.setupCandleTime) {
+      kept.push(order);
+      continue;
+    }
+    if (state.activeTrades.length >= config.maxTradesPerPair) {
+      kept.push(order);
+      continue;
+    }
+
+    const triggered = order.direction === "BUY" ? latest.high >= order.entry : latest.low <= order.entry;
+    if (!triggered) {
+      kept.push(order);
+      continue;
+    }
+
+    await executeOrderSignal(pair, state, order);
+  }
+
+  state.pendingOrders = kept;
+}
+
+async function executeOrderSignal(pair, state, signal) {
+  try {
+    const gate = riskManager.canTrade();
+    if (!gate.allowed) {
+      console.log(`  ⛔ Risk gate blocked pending ${signal.direction}: ${gate.reason}`);
+      return;
+    }
+
+    const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry);
+    if (units <= 0) return;
+
+    const res = await icmarkets.openPosition(pair, signal.direction, units, signal.sl, signal.tp, signal.entry);
+    if (res && res.positionId) {
+      state.activeTrades.push({
+        id: String(res.positionId), direction: signal.direction, pair,
+        entry: signal.entry, sl: signal.sl, tp: signal.tp,
+        strategy: signal.strategy, sessionKey: signal.sessionKey,
+        ageBars: 0, timeExitBars: signal.timeExitBars, forceExitUTC: signal.forceExitUTC,
+      });
+      if (signal.sessionKey) {
+        state.sessionTradeCounts.set(signal.sessionKey, (state.sessionTradeCounts.get(signal.sessionKey) ?? 0) + 1);
+      }
+      riskManager.onTradeOpened(String(res.positionId), pair, signal.direction, signal.entry, signal.sl, signal.tp, units);
+      saveState();
+      console.log(`  ✅ Pending ${signal.direction} triggered and sent as market order.`);
+    }
+  } catch (err) {
+    console.error(`  ❌ Pending order execution failed:`, err.message);
+  }
+}
+
+async function manageActiveTradeTimeExits(pair, state) {
+  if (!AUTO_EXECUTE || state.activeTrades.length === 0) return;
+  const latest = normalizeLiveCandle(state.candleCache.at(-1));
+  if (!latest) return;
+  const hour = latest.date.getUTCHours() + latest.date.getUTCMinutes() / 60;
+
+  for (const trade of state.activeTrades) {
+    if (trade.closing) continue;
+    const hitTimeExit = trade.timeExitBars && (trade.ageBars ?? 0) >= trade.timeExitBars;
+    const hitForceExit = Number.isFinite(trade.forceExitUTC) && hour >= trade.forceExitUTC;
+    if (!hitTimeExit && !hitForceExit) continue;
+
+    trade.closing = true;
+    console.log(`  ⏱️  Closing ${pair} ${trade.direction} by ${hitForceExit ? "16:00 UTC" : "time-exit"} rule.`);
+    try {
+      await icmarkets.closeTrade(trade.id);
+    } catch (err) {
+      trade.closing = false;
+      console.error(`  ❌ Time-exit close failed for ${trade.id}:`, err.message);
+    }
+  }
+}
+
+function normalizeLiveCandle(candle) {
+  if (!candle) return null;
+  const m = candle.mid ?? candle.bid ?? candle.ask;
+  if (!m) return null;
+  const out = {
+    date: new Date(candle.time),
+    open: Number(m.o),
+    high: Number(m.h),
+    low: Number(m.l),
+    close: Number(m.c),
+  };
+  return [out.open, out.high, out.low, out.close].every(Number.isFinite) ? out : null;
+}
+
+function getAsianRangeFromCandles(candles, dateObj, cfg = {}) {
+  const day = dateObj.toISOString().slice(0, 10);
+  const start = cfg.asianStartUTC ?? 0;
+  const end = cfg.asianEndUTC ?? 7;
+  const asian = candles
+    .map(c => ({ raw: c, norm: normalizeLiveCandle(c) }))
+    .filter(({ raw, norm }) => {
+      if (!norm || raw.time.slice(0, 10) !== day) return false;
+      const h = norm.date.getUTCHours() + norm.date.getUTCMinutes() / 60;
+      return h >= start && h < end;
+    })
+    .map(x => x.norm);
+
+  if (asian.length < 12) return null;
+  return {
+    name: "asian_range",
+    high: Math.max(...asian.map(c => c.high)),
+    low: Math.min(...asian.map(c => c.low)),
+    start,
+    end,
+  };
+}
 
 function handleExecutionEvent(payload) {
   if (payload.executionType === "DEAL_FILLED" || payload.executionType === 4) {
@@ -176,6 +417,11 @@ function handleExecutionEvent(payload) {
         if (found) matchedTrade = found;
         state.activeTrades = state.activeTrades.filter(t => t.id !== positionId);
       }
+      const pnlKES = realizedPnlKES(deal);
+      if (Number.isFinite(pnlKES)) {
+        riskManager.onTradeClosed(positionId, pnlKES);
+      }
+      riskManager.syncOpenTradeCount(getOpenTradeCount());
 
       if (matchedTrade && config.strategy.cooldownCandlesAfterLoss > 0) {
         let exitPrice = Number(deal.executionPrice ?? 0);
@@ -193,6 +439,19 @@ function handleExecutionEvent(payload) {
   }
 }
 
+function realizedPnlKES(deal) {
+  const detail = deal?.closePositionDetail;
+  if (!detail) return null;
+  const moneyDigits = Number(detail.moneyDigits ?? deal.moneyDigits ?? 2);
+  const divisor = 10 ** moneyDigits;
+  const gross = Number(detail.grossProfit ?? 0);
+  const swap = Number(detail.swap ?? 0);
+  const commission = Number(detail.commission ?? 0);
+  const conversionFee = Number(detail.pnlConversionFee ?? 0);
+  const pnlDepositCurrency = (gross + swap + commission + conversionFee) / divisor;
+  return pnlDepositCurrency * (config.risk.usdKesRate ?? 129.0);
+}
+
 async function reconcileAccount(pair) {
   const state = getState(pair);
   try {
@@ -201,25 +460,25 @@ async function reconcileAccount(pair) {
     state.activeTrades = positions
       .filter(p => p.tradeData && String(p.tradeData.symbolId) === String(symbolId))
       .map(p => ({ id: String(p.positionId), direction: p.tradeData.tradeSide, pair }));
+    riskManager.syncOpenTradeCount(getOpenTradeCount());
     saveState();
   } catch (err) {}
 }
 
-function loadState() {
-  if (fs.existsSync(STATE_FILE)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
-      if (data.activeTrades) {
-        // Migration: flat activeTrades array — no per-pair state needed
-      }
-    } catch (err) {}
-  }
+function getOpenTradeCount() {
+  let count = 0;
+  for (const [, state] of pairState) count += state.activeTrades.length;
+  return count;
 }
 
 function saveState() {
   const allTrades = [];
   for (const [, state] of pairState) allTrades.push(...state.activeTrades);
   fs.writeFileSync(STATE_FILE, JSON.stringify({ activeTrades: allTrades }, null, 2));
+}
+
+function getSessionKey(dateObj, activeWindow) {
+  return `${dateObj.toISOString().slice(0, 10)}:${activeWindow?.name ?? "unknown"}`;
 }
 
 function getActiveSessionWindowUTC(now) {
