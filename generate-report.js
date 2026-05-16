@@ -4,6 +4,7 @@
  */
 import fs from 'fs';
 import { config } from './config.js';
+import { computeRobustnessReport } from './report-metrics.js';
 
 const FILE_PATH = 'trades_backtest.json';
 const OUTPUT_PATH = 'report.html';
@@ -32,11 +33,84 @@ function formatDatePretty(dateStr) {
   
   const j = day % 10, k = day % 100;
   let suffix = "th";
-  if (j == 1 && k != 11) suffix = "st";
-  if (j == 2 && k != 12) suffix = "nd";
-  if (j == 3 && k != 13) suffix = "rd";
-  
+  if (j === 1 && k !== 11) suffix = "st";
+  if (j === 2 && k !== 12) suffix = "nd";
+  if (j === 3 && k !== 13) suffix = "rd";
+
   return `${day}${suffix} ${month} ${year}`;
+}
+
+function tradeTime(trade) {
+  return trade.exitTime || trade.time || trade.setupTime;
+}
+
+function formatUSD(val) {
+  return `$${Number(val || 0).toFixed(2)}`;
+}
+
+function formatPct(val, digits = 1) {
+  return `${Number(val || 0).toFixed(digits)}%`;
+}
+
+function formatProfitFactor(val) {
+  return val === Infinity ? '∞' : Number(val || 0).toFixed(2);
+}
+
+function signedKES(val) {
+  const amount = Number(val || 0);
+  return `${amount >= 0 ? '+' : ''}${formatKES(amount)}`;
+}
+
+function signedUSD(val) {
+  const amount = Number(val || 0);
+  return `${amount >= 0 ? '+' : ''}${formatUSD(amount)}`;
+}
+
+function profitColor(val) {
+  return Number(val || 0) >= 0 ? 'var(--success)' : 'var(--danger)';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function renderPeriodRows(periods, kesRate) {
+  return periods.map(period => `
+    <tr>
+      <td style="font-weight: 600;">${escapeHtml(period.period)}</td>
+      <td>${period.trades}</td>
+      <td>${formatPct(period.winRate)}</td>
+      <td style="color: ${profitColor(period.netProfit)}; font-weight: 700;">${signedKES(period.netProfit * kesRate)}</td>
+      <td style="color: var(--muted);">${signedUSD(period.netProfit)}</td>
+      <td>${formatProfitFactor(period.profitFactor)}</td>
+    </tr>`).join('');
+}
+
+function renderPairRows(pairs, kesRate) {
+  return pairs.map(pair => `
+    <tr>
+      <td style="font-weight: 700;">${escapeHtml(pair.pair)}</td>
+      <td>${pair.trades}</td>
+      <td>${formatPct(pair.winRate)}</td>
+      <td>${formatProfitFactor(pair.profitFactor)}</td>
+      <td style="color: ${profitColor(pair.netProfit)}; font-weight: 700;">${signedKES(pair.netProfit * kesRate)}</td>
+      <td style="color: var(--danger); font-weight: 700;">-${formatKES(pair.maxDrawdown.amount * kesRate)}</td>
+      <td>${pair.longestLosingStreak.count}</td>
+      <td>${formatPct(pair.monthlyStability.greenMonthRate)}</td>
+      <td style="color: ${profitColor(pair.monthlyStability.worstMonth?.netProfit ?? 0)};">${signedKES((pair.monthlyStability.worstMonth?.netProfit ?? 0) * kesRate)}</td>
+    </tr>`).join('');
+}
+
+function renderClusterAlerts(alerts) {
+  return alerts.map(alert => {
+    const klass = alert.level === 'ok' ? 'bg-success' : alert.level === 'danger' ? 'bg-danger' : 'bg-warning';
+    return `<div class="diagnostic-line"><span class="badge ${klass}">${escapeHtml(alert.level)}</span><span>${escapeHtml(alert.text)}</span></div>`;
+  }).join('');
 }
 
 function generate() {
@@ -46,7 +120,7 @@ function generate() {
   }
 
   const data = JSON.parse(fs.readFileSync(FILE_PATH, "utf8"));
-  const trades = data.trades || [];
+  const trades = [...(data.trades || [])].sort((a, b) => new Date(tradeTime(a) || 0) - new Date(tradeTime(b) || 0));
   const profile = data.profile || {};
   const profileSummary = buildProfileSummary(profile);
   const generatedAtUTC = data.generatedAtUTC || new Date().toISOString();
@@ -56,6 +130,7 @@ function generate() {
     return;
   }
 
+  const robustness = computeRobustnessReport(trades);
   const wins = trades.filter(t => t.profit > 0);
   const losses = trades.filter(t => t.profit <= 0);
   const grossProfitKES = wins.reduce((s, t) => s + (t.profit * KES_RATE), 0);
@@ -64,7 +139,7 @@ function generate() {
   const profitFactor = grossLossKES > 0 ? (grossProfitKES / grossLossKES).toFixed(2) : grossProfitKES.toFixed(2);
   
   const totalTrades = trades.length;
-  const winRate = data.winRate || ((wins.length / totalTrades) * 100).toFixed(1);
+  const winRate = data.summary?.winRate || ((wins.length / totalTrades) * 100).toFixed(1);
   const avgWinKES = wins.length > 0 ? (grossProfitKES / wins.length) : 0;
   const avgLossKES = losses.length > 0 ? (grossLossKES / losses.length) : 0;
 
@@ -72,25 +147,24 @@ function generate() {
   const startBalanceKES = (trades[0].balance - trades[0].profit) * KES_RATE;
   const roi = ((finalBalanceKES / startBalanceKES - 1) * 100).toFixed(2);
 
-  let peakKES = startBalanceKES, maxDD = 0;
-  trades.forEach(t => {
-    const balKES = t.balance * KES_RATE;
-    if (balKES > peakKES) peakKES = balKES;
-    const dd = ((peakKES - balKES) / peakKES) * 100;
-    if (dd > maxDD) maxDD = dd;
-  });
+  const maxDDKES = robustness.maxDrawdown.amount * KES_RATE;
+  const maxDD = robustness.maxDrawdown.pct;
 
   const bestTradeKES = Math.max(...trades.map(t => t.profit * KES_RATE));
   const worstTradeKES = Math.min(...trades.map(t => t.profit * KES_RATE));
+  const bestMonth = robustness.clustering.topMonth;
+  const bestPair = robustness.clustering.topPair;
+  const bestYear = robustness.clustering.topYear;
+  const monthlyRows = renderPeriodRows(robustness.monthly, KES_RATE);
+  const yearlyRows = renderPeriodRows(robustness.yearly, KES_RATE);
+  const pairRows = renderPairRows(robustness.byPair, KES_RATE);
+  const clusterAlerts = renderClusterAlerts(robustness.clustering.alerts);
 
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Cache-Control" content="no-store, max-age=0">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
 <title>Strategy Dashboard (KES) — Dark</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -130,11 +204,20 @@ function generate() {
   .badge { padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
   .bg-success { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.2); }
   .bg-danger { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .bg-warning { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.2); }
   .bg-blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.2); }
   .bg-muted { background: rgba(148, 163, 184, 0.1); color: var(--muted); border: 1px solid rgba(148, 163, 184, 0.2); }
+  .table-wrap { overflow-x: auto; }
+  .metric-list { display: grid; gap: 0.85rem; }
+  .metric-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); }
+  .metric-row:last-child { border-bottom: 0; padding-bottom: 0; }
+  .metric-row span:first-child { color: var(--muted); font-size: 12px; }
+  .metric-row strong { font-size: 14px; text-align: right; }
+  .diagnostic-line { display: flex; align-items: flex-start; gap: 0.75rem; margin-bottom: 0.75rem; color: var(--muted); font-size: 13px; }
+  .section-spacer { margin-top: 1.5rem; }
   
   .flex-row { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; margin-top: 1.5rem; }
-  @media (max-width: 850px) { .flex-row { grid-template-columns: 1fr; } .grid-stats { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 850px) { .flex-row { grid-template-columns: 1fr; } .grid-stats { grid-template-columns: 1fr 1fr; } header { display: block; } }
 </style>
 </head>
 <body>
@@ -163,7 +246,7 @@ function generate() {
     <div class="card">
       <div class="label">Efficiency (PF)</div>
       <div class="value">${profitFactor}</div>
-      <div class="sub-value" style="color: var(--muted)">Max DD: ${maxDD.toFixed(2)}%</div>
+      <div class="sub-value" style="color: var(--muted)">Max DD: ${formatKES(maxDDKES)} / ${maxDD.toFixed(2)}%</div>
     </div>
     <div class="card">
       <div class="label">Portfolio Value</div>
@@ -182,6 +265,16 @@ function generate() {
       <div class="label">Peak Deviations</div>
       <div class="value" style="font-size: 18px;"><span style="color: var(--success)">${formatKES(bestTradeKES)}</span> <span style="color:var(--muted);font-size:12px">/</span> <span style="color: var(--danger)">${formatKES(worstTradeKES)}</span></div>
       <div class="sub-value" style="color: var(--muted)">Best vs Worst Trade Execution</div>
+    </div>
+    <div class="card">
+      <div class="label">Longest Losing Streak</div>
+      <div class="value" style="font-size: 18px; color: ${robustness.longestLosingStreak.count >= 4 ? 'var(--danger)' : 'var(--text)'}">${robustness.longestLosingStreak.count} trades</div>
+      <div class="sub-value" style="color: var(--muted)">${formatKES(Math.abs(robustness.longestLosingStreak.amount * KES_RATE))} during worst streak</div>
+    </div>
+    <div class="card">
+      <div class="label">Profit Clustering</div>
+      <div class="value" style="font-size: 18px; color: ${robustness.clustering.topMonthPositiveShare >= 50 ? 'var(--danger)' : 'var(--success)'}">${formatPct(robustness.clustering.topMonthPositiveShare)}</div>
+      <div class="sub-value" style="color: var(--muted)">Best month share of positive monthly profit</div>
     </div>
   </div>
 
@@ -215,11 +308,92 @@ function generate() {
       </div>
     </div>
   </div>
+
+  <div class="grid-stats section-spacer">
+    <div class="card">
+      <div class="section-title">ROBUSTNESS SNAPSHOT</div>
+      <div class="metric-list">
+        <div class="metric-row"><span>Portfolio max drawdown</span><strong style="color: var(--danger)">-${formatKES(maxDDKES)} (${maxDD.toFixed(2)}%)</strong></div>
+        <div class="metric-row"><span>Worst losing streak</span><strong>${robustness.longestLosingStreak.count} trades / -${formatKES(Math.abs(robustness.longestLosingStreak.amount * KES_RATE))}</strong></div>
+        <div class="metric-row"><span>Best month</span><strong>${bestMonth ? `${escapeHtml(bestMonth.period)} · ${signedKES(bestMonth.netProfit * KES_RATE)}` : 'n/a'}</strong></div>
+        <div class="metric-row"><span>Best year</span><strong>${bestYear ? `${escapeHtml(bestYear.period)} · ${signedKES(bestYear.netProfit * KES_RATE)}` : 'n/a'}</strong></div>
+        <div class="metric-row"><span>Top pair contribution</span><strong>${bestPair ? `${escapeHtml(bestPair.pair)} · ${formatPct(robustness.clustering.topPairPositiveShare)}` : 'n/a'}</strong></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title">PROFIT CLUSTERING CHECKS</div>
+      ${clusterAlerts}
+      <div class="metric-list" style="margin-top: 1rem;">
+        <div class="metric-row"><span>Best month share</span><strong>${formatPct(robustness.clustering.topMonthPositiveShare)}</strong></div>
+        <div class="metric-row"><span>Top 3 months share</span><strong>${formatPct(robustness.clustering.topThreeMonthPositiveShare)}</strong></div>
+        <div class="metric-row"><span>Best year share</span><strong>${formatPct(robustness.clustering.topYearPositiveShare)}</strong></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex-row">
+    <div class="card">
+      <div class="section-title">YEARLY P&L</div>
+      <div style="height: 250px;">
+        <canvas id="yearlyChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title">PER-PAIR DRAWDOWN</div>
+      <div style="height: 250px;">
+        <canvas id="pairDrawdownChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="card section-spacer">
+    <div class="section-title">PER-PAIR ROBUSTNESS</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Pair</th>
+            <th>Trades</th>
+            <th>Win %</th>
+            <th>PF</th>
+            <th>Net P&L</th>
+            <th>Max DD</th>
+            <th>Lose Streak</th>
+            <th>Green Months</th>
+            <th>Worst Month</th>
+          </tr>
+        </thead>
+        <tbody>${pairRows}</tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="flex-row">
+    <div class="card">
+      <div class="section-title">MONTHLY P&L STABILITY</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Month</th><th>Trades</th><th>Win %</th><th>Net KES</th><th>Net USD</th><th>PF</th></tr></thead>
+          <tbody>${monthlyRows}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title">YEARLY P&L TABLE</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Year</th><th>Trades</th><th>Win %</th><th>Net KES</th><th>Net USD</th><th>PF</th></tr></thead>
+          <tbody>${yearlyRows}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
 const trades = ${JSON.stringify(trades)};
 const KES_RATE = ${KES_RATE};
+const robustness = ${JSON.stringify(robustness)};
 
 Chart.defaults.color = '#94a3b8';
 Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
@@ -235,9 +409,9 @@ function formatDateJS(dateStr) {
   const year = date.getFullYear();
   const j = day % 10, k = day % 100;
   let suffix = "th";
-  if (j == 1 && k != 11) suffix = "st";
-  if (j == 2 && k != 12) suffix = "nd";
-  if (j == 3 && k != 13) suffix = "rd";
+  if (j === 1 && k !== 11) suffix = "st";
+  if (j === 2 && k !== 12) suffix = "nd";
+  if (j === 3 && k !== 13) suffix = "rd";
   return day + suffix + " " + month + " " + year;
 }
 
@@ -269,12 +443,7 @@ new Chart(document.getElementById('equityChart'), {
 });
 
 // 2. Monthly P&L
-const months = {};
-trades.forEach(t => {
-  const d = new Date(t.exitTime);
-  const key = d.toLocaleString('default', { month: 'short' }) + ' ' + d.getFullYear().toString().slice(2);
-  months[key] = (months[key] || 0) + (t.profit * KES_RATE);
-});
+const months = Object.fromEntries(robustness.monthly.map(m => [m.period, m.netProfit * KES_RATE]));
 
 new Chart(document.getElementById('monthlyChart'), {
   type: 'bar',
@@ -292,7 +461,45 @@ new Chart(document.getElementById('monthlyChart'), {
   }
 });
 
-// 3. Trade Table
+// 3. Yearly P&L
+new Chart(document.getElementById('yearlyChart'), {
+  type: 'bar',
+  data: {
+    labels: robustness.yearly.map(y => y.period),
+    datasets: [{
+      data: robustness.yearly.map(y => y.netProfit * KES_RATE),
+      backgroundColor: robustness.yearly.map(y => y.netProfit >= 0 ? '#22c55e' : '#ef4444'),
+      borderRadius: 6
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { y: { ticks: { callback: v => 'KSh ' + v.toLocaleString() } } }
+  }
+});
+
+// 4. Per-pair drawdown
+new Chart(document.getElementById('pairDrawdownChart'), {
+  type: 'bar',
+  data: {
+    labels: robustness.byPair.map(p => p.pair),
+    datasets: [{
+      data: robustness.byPair.map(p => -(p.maxDrawdown.amount * KES_RATE)),
+      backgroundColor: '#ef4444',
+      borderRadius: 6
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { y: { ticks: { callback: v => 'KSh ' + v.toLocaleString() } } }
+  }
+});
+
+// 5. Trade Table
 const table = document.getElementById('tradeTable');
 trades.slice().reverse().forEach(t => {
   const row = table.insertRow();

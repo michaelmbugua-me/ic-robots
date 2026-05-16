@@ -4,8 +4,21 @@
  */
 
 import fs from "fs";
+import { computeRobustnessReport } from "./report-metrics.js";
 
 const FILE_PATH = "trades_backtest.json";
+
+function formatUSD(value) {
+  return `$${Number(value || 0).toFixed(2)}`;
+}
+
+function formatPct(value) {
+  return `${Number(value || 0).toFixed(1)}%`;
+}
+
+function formatProfitFactor(value) {
+  return value === Infinity ? "∞" : Number(value || 0).toFixed(2);
+}
 
 function analyze() {
   if (!fs.existsSync(FILE_PATH)) {
@@ -81,6 +94,30 @@ function analyze() {
   console.log(`  Losing Days    : \x1b[31m${redDays}\x1b[0m`);
   console.log(`  Batting Average: ${((greenDays / sortedDates.length) * 100).toFixed(1)}% (Green Day Ratio)`);
   console.log(`  Total Net PnL  : $${totalProfit.toFixed(2)}`);
+  console.log(`${"═".repeat(60)}\n`);
+
+  const robustness = computeRobustnessReport(trades);
+  const bestMonth = robustness.clustering.topMonth;
+
+  console.log(`═══ 🧱 ROBUSTNESS REPORT ═══`);
+  console.log(`  Max Drawdown          : ${formatUSD(robustness.maxDrawdown.amount)} (${formatPct(robustness.maxDrawdown.pct)})`);
+  console.log(`  Longest Losing Streak : ${robustness.longestLosingStreak.count} trades (${formatUSD(robustness.longestLosingStreak.amount)})`);
+  console.log(`  Best Month Share      : ${formatPct(robustness.clustering.topMonthPositiveShare)}${bestMonth ? ` (${bestMonth.period})` : ""}`);
+  console.log(`  Top 3 Months Share    : ${formatPct(robustness.clustering.topThreeMonthPositiveShare)}`);
+  console.log(`${"-".repeat(60)}`);
+  console.log(`  Pair      | Trades | Win % | PF   | Net PnL | Max DD | Green Months`);
+  console.log(`${"-".repeat(60)}`);
+  for (const pair of robustness.byPair) {
+    console.log(
+      `  ${pair.pair.padEnd(8)} | ${String(pair.trades).padStart(6)} | ${formatPct(pair.winRate).padStart(5)} | ${formatProfitFactor(pair.profitFactor).padStart(4)} | ` +
+      `${formatUSD(pair.netProfit).padStart(7)} | ${formatUSD(pair.maxDrawdown.amount).padStart(6)} | ${formatPct(pair.monthlyStability.greenMonthRate).padStart(12)}`
+    );
+  }
+  console.log(`${"-".repeat(60)}`);
+  for (const alert of robustness.clustering.alerts) {
+    const prefix = alert.level === "ok" ? "✅" : alert.level === "danger" ? "❌" : "⚠️";
+    console.log(`  ${prefix} ${alert.text}`);
+  }
   console.log(`${"═".repeat(60)}\n`);
 }
 

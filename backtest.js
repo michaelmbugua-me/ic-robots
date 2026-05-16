@@ -32,7 +32,7 @@ async function main() {
   });
 
   console.log(`\n${"═".repeat(60)}`);
-  console.log(`  🤖  5-10-20 EMA SCALPING BACKTESTER (SINGLE)`);
+  console.log(`  🤖  EMA SCALPING BACKTESTER (SINGLE)`);
   console.log(`  Pair      : ${PAIR}`);
   console.log(`${"═".repeat(60)}\n`);
 
