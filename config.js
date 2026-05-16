@@ -92,7 +92,7 @@ export const config = {
     riskPerTradePercent:  envNumber("RISK_PER_TRADE_PERCENT", 0.5),
     enforceDailyStopLoss: envBool("ENFORCE_DAILY_STOP_LOSS", true),
     dailyStopLossKES:     envNumber("DAILY_STOP_LOSS_KES", 300),
-    dailyProfitTargetKES: envNumber("DAILY_PROFIT_TARGET_KES", 300),
+    dailyProfitTargetKES: envNumber("DAILY_PROFIT_TARGET_KES", 1000),
     maxLeverage:          100,
     usdKesRate:           129.0,
   },

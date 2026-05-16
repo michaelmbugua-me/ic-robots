@@ -5,11 +5,13 @@
 import fs from "fs";
 import { detectHigherTimeframeTrend, generateNYAsianContinuationSignal, generateNYOpeningRangeBreakoutSignal, generateSignal, generateSessionSweepSignal, generateSmashBuySignal, generateSmashSellSignal } from "./indicators.js";
 import { config } from "./config.js";
+import { calculatePipValueUSD, calculateRiskVolume } from "./position-sizing.js";
 
 const INITIAL_BALANCE = 385; 
 const COMMISSION_SIDE_USD = 3.00;
 const SPREAD_PIPS = 0.5; 
 const SLIPPAGE_PIPS = 0.2;
+const USD_KES_RATE = config.risk.usdKesRate ?? 129.0;
 
 let balance = INITIAL_BALANCE;
 const pairData = {};
@@ -63,6 +65,15 @@ async function main() {
 
   const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => new Date(a) - new Date(b));
   const windowM5 = 100;
+  const dailyRisk = {
+    currentDay: null,
+    tradingEnabled: true,
+    dailyRealizedProfitKES: 0,
+    dailyRealizedLossKES: 0,
+    blockedSignals: 0,
+    blockedPendingTriggers: 0,
+    blockedDays: new Map(),
+  };
 
   for (const timestamp of sortedTimestamps) {
     for (const pair of PAIRS) {
@@ -75,6 +86,7 @@ async function main() {
       const currentM5Candles = p.candles.slice(p.candleIndex - windowM5, p.candleIndex);
       const nextCandle = p.candles[p.candleIndex];
       const dateObj = new Date(timestamp);
+      resetDailyRiskIfNeeded(dateObj);
       while (
         p.higherTimeframeIndex < p.higherTimeframeCandles.length &&
         new Date(p.higherTimeframeCandles[p.higherTimeframeIndex].endTime) <= new Date(timestamp)
@@ -138,6 +150,7 @@ async function main() {
       }
 
       processPendingOrders(pair, p, { timestamp, bidLow, askHigh, slippage });
+      if (!canBacktestTrade(timestamp)) continue;
       if (p.activeTrades.length >= config.maxTradesPerPair) continue;
       if (getTotalActiveTrades() >= (config.maxTotalTrades ?? Infinity)) continue;
 
@@ -240,10 +253,14 @@ async function main() {
   }
 
   function handleSignal(pair, signal, price, time, setupIndex, sessionKey = null) {
+    if (!canBacktestTrade(time)) {
+      dailyRisk.blockedSignals += 1;
+      return;
+    }
+
     const p = pairData[pair];
     const action = signal.signal.toUpperCase();
-    const riskPerTrade = INITIAL_BALANCE * ((config.risk.riskPerTradePercent ?? 1) / 100);
-    const units = Math.min(10000, Math.floor(riskPerTrade / (signal.riskPips * (10/100000))));
+    const units = calculateBacktestUnits(pair, signal);
     if (units <= 0) return;
 
     if (signal.signal === "sell_stop") {
@@ -321,6 +338,10 @@ async function main() {
       if (getTotalActiveTrades() >= (config.maxTotalTrades ?? Infinity)) return true;
 
       if (order.direction === "SELL" && market.bidLow <= order.entry) {
+        if (!canBacktestTrade(market.timestamp)) {
+          dailyRisk.blockedPendingTriggers += 1;
+          return false;
+        }
         if (order.sessionKey) {
           p.sessionTradeCounts.set(order.sessionKey, (p.sessionTradeCounts.get(order.sessionKey) ?? 0) + 1);
         }
@@ -350,6 +371,10 @@ async function main() {
       }
 
       if (order.direction === "BUY" && market.askHigh >= order.entry) {
+        if (!canBacktestTrade(market.timestamp)) {
+          dailyRisk.blockedPendingTriggers += 1;
+          return false;
+        }
         if (order.sessionKey) {
           p.sessionTradeCounts.set(order.sessionKey, (p.sessionTradeCounts.get(order.sessionKey) ?? 0) + 1);
         }
@@ -386,24 +411,114 @@ async function main() {
     return Object.values(pairData).reduce((sum, p) => sum + p.activeTrades.length, 0);
   }
 
+  function calculateBacktestUnits(pair, signal) {
+    return calculateRiskVolume({
+      pair,
+      slPips: signal.riskPips,
+      currentRate: signal.entry,
+      accountCapitalKES: config.risk.accountCapitalKES,
+      riskPerTradePercent: config.risk.riskPerTradePercent,
+      usdKesRate: USD_KES_RATE,
+      maxLeverage: config.risk.maxLeverage,
+      maxPositionSizeUnits: config.maxPositionSizeUnits,
+    });
+  }
+
+  function resetDailyRiskIfNeeded(dateLike) {
+    const day = dayKeyUTC(new Date(dateLike));
+    if (dailyRisk.currentDay === day) return;
+
+    dailyRisk.currentDay = day;
+    dailyRisk.tradingEnabled = true;
+    dailyRisk.dailyRealizedProfitKES = 0;
+    dailyRisk.dailyRealizedLossKES = 0;
+  }
+
+  function canBacktestTrade(dateLike) {
+    resetDailyRiskIfNeeded(dateLike);
+    if (!dailyRisk.tradingEnabled) return false;
+
+    if (config.risk.enforceDailyStopLoss && dailyRisk.dailyRealizedLossKES >= config.risk.dailyStopLossKES) {
+      disableDailyBacktestTrading('daily_stop_loss');
+      return false;
+    }
+
+    if (dailyRisk.dailyRealizedProfitKES >= config.risk.dailyProfitTargetKES) {
+      disableDailyBacktestTrading('daily_profit_target');
+      return false;
+    }
+
+    return true;
+  }
+
+  function updateDailyRisk(exitTime, profitUSD) {
+    resetDailyRiskIfNeeded(exitTime);
+    const pnlKES = profitUSD * USD_KES_RATE;
+    if (pnlKES >= 0) dailyRisk.dailyRealizedProfitKES += pnlKES;
+    else dailyRisk.dailyRealizedLossKES += Math.abs(pnlKES);
+
+    if (config.risk.enforceDailyStopLoss && dailyRisk.dailyRealizedLossKES >= config.risk.dailyStopLossKES) {
+      disableDailyBacktestTrading('daily_stop_loss');
+    }
+    if (dailyRisk.dailyRealizedProfitKES >= config.risk.dailyProfitTargetKES) {
+      disableDailyBacktestTrading('daily_profit_target');
+    }
+
+    return {
+      day: dailyRisk.currentDay,
+      pnlKES: +pnlKES.toFixed(2),
+      dailyRealizedProfitKES: +dailyRisk.dailyRealizedProfitKES.toFixed(2),
+      dailyRealizedLossKES: +dailyRisk.dailyRealizedLossKES.toFixed(2),
+      tradingEnabled: dailyRisk.tradingEnabled,
+    };
+  }
+
+  function disableDailyBacktestTrading(reason) {
+    dailyRisk.tradingEnabled = false;
+    if (!dailyRisk.blockedDays.has(dailyRisk.currentDay)) {
+      dailyRisk.blockedDays.set(dailyRisk.currentDay, {
+        day: dailyRisk.currentDay,
+        reason,
+        dailyRealizedProfitKES: +dailyRisk.dailyRealizedProfitKES.toFixed(2),
+        dailyRealizedLossKES: +dailyRisk.dailyRealizedLossKES.toFixed(2),
+      });
+    }
+  }
+
   function closeTrade(pair, trade, exitPrice, reason, exitTime) {
     const p = pairData[pair];
     const diff = trade.direction === "BUY" ? (exitPrice - trade.entry) : (trade.entry - exitPrice);
     const pips = diff / p.pipSize;
-    const grossProfit = (pips * (10/100000)) * trade.units;
+    const pipValueUSDPerLot = calculatePipValueUSD(pair, exitPrice);
+    const pipValueUSDPerUnit = pipValueUSDPerLot / 100_000;
+    const grossProfit = pips * pipValueUSDPerUnit * trade.units;
     const commission = COMMISSION_SIDE_USD * 2 * (trade.units / 100_000);
     const profit = grossProfit - commission;
     balance += profit;
     if (reason === "SL" && config.strategy.cooldownCandlesAfterLoss > 0) {
       p.cooldownCandlesRemaining = Math.max(p.cooldownCandlesRemaining, config.strategy.cooldownCandlesAfterLoss);
     }
-    p.tradeHistory.push({ ...trade, exit: exitPrice, exitTime, reason, grossProfit, commission, profit, balance });
+    const dailyRiskSnapshot = updateDailyRisk(exitTime, profit);
+    p.tradeHistory.push({
+      ...trade,
+      exit: exitPrice,
+      exitTime,
+      reason,
+      grossProfit,
+      commission,
+      profit,
+      balance,
+      pipValueUSDPerLot,
+      pipValueUSDPerUnit,
+      dailyRisk: dailyRiskSnapshot,
+    });
     console.log(`  ✅ [${exitTime}] ${pair} ${reason} | Net: $${profit.toFixed(2)} | Bal: $${balance.toFixed(2)}`);
   }
 
   const allHistory = Object.values(pairData).flatMap(p => p.tradeHistory);
   const wins = allHistory.filter(t => t.profit > 0);
   const byPair = Object.fromEntries(Object.keys(pairData).map(pair => [pair, summarizeTrades(pairData[pair].tradeHistory)]));
+  const blockedDays = Array.from(dailyRisk.blockedDays.values()).sort((a, b) => a.day.localeCompare(b.day));
 
   const finalStats = {
     type: "backtest",
@@ -416,6 +531,20 @@ async function main() {
       spreadPips: SPREAD_PIPS,
       slippagePips: SLIPPAGE_PIPS,
       commissionSideUSD: COMMISSION_SIDE_USD,
+      usdKesRate: USD_KES_RATE,
+      positionSizing: {
+        model: "shared_kes_risk_volume",
+        accountCapitalKES: config.risk.accountCapitalKES,
+        riskPerTradePercent: config.risk.riskPerTradePercent,
+        maxLeverage: config.risk.maxLeverage,
+        maxPositionSizeUnits: config.maxPositionSizeUnits,
+      },
+      dailyRiskSimulation: {
+        enabled: true,
+        enforceDailyStopLoss: config.risk.enforceDailyStopLoss,
+        dailyStopLossKES: config.risk.dailyStopLossKES,
+        dailyProfitTargetKES: config.risk.dailyProfitTargetKES,
+      },
       emaSeparationMinPips: config.strategy.emaSeparationMinPips,
       cooldownCandlesAfterLoss: config.strategy.cooldownCandlesAfterLoss,
       minRiskPips: config.strategy.minRiskPips,
@@ -441,7 +570,15 @@ async function main() {
       winRate: allHistory.length > 0 ? ((wins.length / allHistory.length) * 100).toFixed(1) : 0,
       netProfit: balance - INITIAL_BALANCE,
       finalBalance: balance,
-    }
+      dailyRiskSimulation: {
+        blockedDays: blockedDays.length,
+        blockedSignals: dailyRisk.blockedSignals,
+        blockedPendingTriggers: dailyRisk.blockedPendingTriggers,
+      },
+    },
+    dailyRiskSimulation: {
+      blockedDays,
+    },
   };
 
   fs.writeFileSync("trades_backtest.json", JSON.stringify(finalStats, null, 2));
@@ -451,6 +588,7 @@ async function main() {
   for (const [pair, stats] of Object.entries(byPair)) {
     console.log(`     ${pair.padEnd(8)} Trades: ${String(stats.total).padStart(3)} | Win: ${stats.winRate}% | PF: ${stats.profitFactor} | Net: $${stats.netProfit}`);
   }
+  console.log(`  🛡️  Daily risk simulation: blocked days ${blockedDays.length} | blocked signals ${dailyRisk.blockedSignals} | blocked pending triggers ${dailyRisk.blockedPendingTriggers}`);
   console.log(`  💾 Data saved to trades_backtest.json\n`);
 }
 

@@ -18,6 +18,7 @@ function buildProfileSummary(profile = {}) {
   if (profile.minRiskPips !== undefined && profile.maxRiskPips !== undefined) {
     parts.push(`risk=${profile.minRiskPips}-${profile.maxRiskPips} pips`);
   }
+  if (profile.positionSizing?.model) parts.push(`sizing=${profile.positionSizing.model}`);
   return parts.join(' | ');
 }
 
@@ -113,6 +114,20 @@ function renderClusterAlerts(alerts) {
   }).join('');
 }
 
+function renderBlockedDayRows(blockedDays = []) {
+  if (!blockedDays.length) {
+    return `<tr><td colspan="4" style="color: var(--muted);">No daily stop/profit gates were hit in this backtest.</td></tr>`;
+  }
+
+  return blockedDays.map(day => `
+    <tr>
+      <td style="font-weight: 700;">${escapeHtml(day.day)}</td>
+      <td><span class="badge ${day.reason === 'daily_profit_target' ? 'bg-success' : 'bg-danger'}">${escapeHtml(day.reason)}</span></td>
+      <td style="color: var(--success); font-weight: 700;">${formatKES(Number(day.dailyRealizedProfitKES || 0))}</td>
+      <td style="color: var(--danger); font-weight: 700;">${formatKES(Number(day.dailyRealizedLossKES || 0))}</td>
+    </tr>`).join('');
+}
+
 function generate() {
   if (!fs.existsSync(FILE_PATH)) {
     console.log("❌ No trade data found. Run a backtest first.");
@@ -159,6 +174,10 @@ function generate() {
   const yearlyRows = renderPeriodRows(robustness.yearly, KES_RATE);
   const pairRows = renderPairRows(robustness.byPair, KES_RATE);
   const clusterAlerts = renderClusterAlerts(robustness.clustering.alerts);
+  const dailyRiskProfile = profile.dailyRiskSimulation || {};
+  const dailyRiskSummary = data.summary?.dailyRiskSimulation || {};
+  const blockedDays = data.dailyRiskSimulation?.blockedDays || [];
+  const blockedDayRows = renderBlockedDayRows(blockedDays);
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -276,6 +295,11 @@ function generate() {
       <div class="value" style="font-size: 18px; color: ${robustness.clustering.topMonthPositiveShare >= 50 ? 'var(--danger)' : 'var(--success)'}">${formatPct(robustness.clustering.topMonthPositiveShare)}</div>
       <div class="sub-value" style="color: var(--muted)">Best month share of positive monthly profit</div>
     </div>
+    <div class="card">
+      <div class="label">Daily Risk Gate</div>
+      <div class="value" style="font-size: 18px; color: ${(dailyRiskSummary.blockedDays || 0) > 0 ? 'var(--warning, #fbbf24)' : 'var(--success)'}">${dailyRiskSummary.blockedDays || 0} days</div>
+      <div class="sub-value" style="color: var(--muted)">Stop ${formatKES(dailyRiskProfile.dailyStopLossKES || 0)} / Target ${formatKES(dailyRiskProfile.dailyProfitTargetKES || 0)}</div>
+    </div>
   </div>
 
   <div class="card" style="margin-bottom: 1.5rem;">
@@ -292,6 +316,7 @@ function generate() {
         <thead>
           <tr>
             <th>Timestamp</th>
+            <th>Pair</th>
             <th>Dir</th>
             <th>Result</th>
             <th>Net Profit</th>
@@ -328,6 +353,21 @@ function generate() {
         <div class="metric-row"><span>Top 3 months share</span><strong>${formatPct(robustness.clustering.topThreeMonthPositiveShare)}</strong></div>
         <div class="metric-row"><span>Best year share</span><strong>${formatPct(robustness.clustering.topYearPositiveShare)}</strong></div>
       </div>
+    </div>
+  </div>
+
+  <div class="card section-spacer">
+    <div class="section-title">DAILY RISK GATE SIMULATION</div>
+    <div class="grid-stats" style="margin-bottom: 1rem;">
+      <div class="metric-row"><span>Blocked days</span><strong>${dailyRiskSummary.blockedDays || 0}</strong></div>
+      <div class="metric-row"><span>Blocked signals</span><strong>${dailyRiskSummary.blockedSignals || 0}</strong></div>
+      <div class="metric-row"><span>Blocked pending triggers</span><strong>${dailyRiskSummary.blockedPendingTriggers || 0}</strong></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Day</th><th>Gate Hit</th><th>Daily Profit</th><th>Daily Loss</th></tr></thead>
+        <tbody>${blockedDayRows}</tbody>
+      </table>
     </div>
   </div>
 
@@ -505,11 +545,13 @@ trades.slice().reverse().forEach(t => {
   const row = table.insertRow();
   const dateStr = formatDateJS(t.exitTime);
   const typeClass = t.direction === 'BUY' ? 'bg-blue' : 'bg-danger';
+  const pair = t.pair || 'N/A';
   const profitKES = t.profit * KES_RATE;
   const profitColor = profitKES >= 0 ? '#4ade80' : '#f87171';
   
   row.innerHTML = \`
     <td style="white-space: nowrap; color: var(--muted); font-size: 12px;">\${dateStr}</td>
+    <td><span class="badge bg-muted">\${pair}</span></td>
     <td><span class="badge \${typeClass}">\${t.direction}</span></td>
     <td><span class="badge bg-muted">\${t.reason} \${t.isBreakeven ? 'BE' : ''}</span></td>
     <td style="color: \${profitColor}; font-weight: 600;">\${profitKES >= 0 ? '+' : ''}\${formatKESJS(profitKES)}</td>

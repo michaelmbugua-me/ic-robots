@@ -56,7 +56,8 @@ function analyze() {
       `  Profile : mode=${profile.sessionWindowMode} | ` +
       `emaSep=${profile.emaSeparationMinPips ?? 0} | ` +
       `cooldown=${profile.cooldownCandlesAfterLoss ?? 0} | ` +
-      `risk=${profile.minRiskPips ?? "?"}-${profile.maxRiskPips ?? "?"} pips`
+      `risk=${profile.minRiskPips ?? "?"}-${profile.maxRiskPips ?? "?"} pips` +
+      `${profile.positionSizing?.model ? ` | sizing=${profile.positionSizing.model}` : ""}`
     );
   }
   if (data.generatedAtUTC) {
@@ -95,6 +96,26 @@ function analyze() {
   console.log(`  Batting Average: ${((greenDays / sortedDates.length) * 100).toFixed(1)}% (Green Day Ratio)`);
   console.log(`  Total Net PnL  : $${totalProfit.toFixed(2)}`);
   console.log(`${"═".repeat(60)}\n`);
+
+  if (data.summary?.dailyRiskSimulation) {
+    const risk = data.summary.dailyRiskSimulation;
+    const blockedDays = data.dailyRiskSimulation?.blockedDays || [];
+    console.log(`═══ 🛡️ DAILY RISK GATE SIMULATION ═══`);
+    console.log(`  Blocked Days            : ${risk.blockedDays || 0}`);
+    console.log(`  Blocked Signals         : ${risk.blockedSignals || 0}`);
+    console.log(`  Blocked Pending Triggers: ${risk.blockedPendingTriggers || 0}`);
+    if (blockedDays.length > 0) {
+      console.log(`${"-".repeat(60)}`);
+      for (const day of blockedDays) {
+        console.log(
+          `  ${day.day} | ${day.reason.padEnd(19)} | ` +
+          `Profit: ${String(Math.round(day.dailyRealizedProfitKES || 0)).padStart(4)} KES | ` +
+          `Loss: ${String(Math.round(day.dailyRealizedLossKES || 0)).padStart(4)} KES`
+        );
+      }
+    }
+    console.log(`${"═".repeat(60)}\n`);
+  }
 
   const robustness = computeRobustnessReport(trades);
   const bestMonth = robustness.clustering.topMonth;

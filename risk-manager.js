@@ -14,6 +14,7 @@
 
 import fs from "fs";
 import { config } from "./config.js";
+import { calculateRiskVolume } from "./position-sizing.js";
 
 const RISK_STATE_FILE = "risk-state.json";
 
@@ -89,53 +90,17 @@ export class RiskManager {
    * @returns {number} units (clamped by max leverage)
    */
   calculateVolume(pair, slPips, currentRate, usdKesRate = config.risk.usdKesRate) {
-    const isJPY = pair.includes("JPY");
-    const pipSize = isJPY ? 0.01 : 0.0001;
-
-    // Pip value in USD per standard lot (100,000 units)
-    let pipValueUSD;
-    if (pair.endsWith("_USD") || pair.endsWith("/USD")) {
-      // Quote currency is USD: pip value = pipSize × 100,000 = $10 for standard lot
-      pipValueUSD = pipSize * 100_000;
-    } else if (pair.startsWith("USD_") || pair.startsWith("USD/")) {
-      // Base currency is USD: pip value = (pipSize / rate) × 100,000
-      pipValueUSD = (pipSize / currentRate) * 100_000;
-    } else {
-      // Cross pair: approximate
-      pipValueUSD = (pipSize / currentRate) * 100_000;
-    }
-
-    // Convert pip value to KES
-    const pipValueKES = pipValueUSD * usdKesRate;
-    // Per-unit pip value (not per lot)
-    const pipValuePerUnitKES = pipValueKES / 100_000;
-
-    if (slPips <= 0 || pipValuePerUnitKES <= 0) {
-      console.error(`  ❌ RiskManager: Invalid SL pips (${slPips}) or pip value (${pipValuePerUnitKES})`);
-      return 0;
-    }
-
-    // Volume = riskAmountKES / (SL_Pips × pipValuePerUnit_KES)
-    // Target model: risk a fixed percentage of account capital per trade.
-    const riskAmountPerTradeKES = this.accountCapitalKES * (this.riskPerTradePercent / 100);
-    let units = Math.floor(riskAmountPerTradeKES / (slPips * pipValuePerUnitKES));
-
-    // Leverage constraint: position notional must not exceed accountCapital × maxLeverage
-    // Notional in KES = units × currentRate × usdKesRate (for USD-denominated pairs)
-    const notionalKES = units * currentRate * usdKesRate;
-    const maxNotionalKES = this.accountCapitalKES * this.maxLeverage;
-
-    if (notionalKES > maxNotionalKES) {
-      units = Math.floor(maxNotionalKES / (currentRate * usdKesRate));
-      console.log(`  ⚠️  RiskManager: Leverage cap applied (1:${this.maxLeverage}). Units capped to ${units}`);
-    }
-
-    // Never allow more than config.maxPositionSizeUnits
-    if (config.maxPositionSizeUnits && units > config.maxPositionSizeUnits) {
-      units = config.maxPositionSizeUnits;
-    }
-
-    return units;
+    return calculateRiskVolume({
+      pair,
+      slPips,
+      currentRate,
+      accountCapitalKES: this.accountCapitalKES,
+      riskPerTradePercent: this.riskPerTradePercent,
+      usdKesRate,
+      maxLeverage: this.maxLeverage,
+      maxPositionSizeUnits: config.maxPositionSizeUnits,
+      logger: console,
+    });
   }
 
 
