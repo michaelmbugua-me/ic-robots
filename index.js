@@ -14,6 +14,19 @@ import { RiskManager } from "./risk-manager.js";
 const STATE_FILE = "state.json";
 const AUTO_EXECUTE = process.argv.includes("--auto-execute");
 const PAIRS = config.tradingPairs;
+const GRANULARITY_MS = {
+  M1: 60_000,
+  M2: 2 * 60_000,
+  M3: 3 * 60_000,
+  M4: 4 * 60_000,
+  M5: 5 * 60_000,
+  M10: 10 * 60_000,
+  M15: 15 * 60_000,
+  M30: 30 * 60_000,
+  H1: 60 * 60_000,
+  H4: 4 * 60 * 60_000,
+  D1: 24 * 60 * 60_000,
+};
 
 const icmarkets = new ICMarketsClient();
 const riskManager = new RiskManager(config);
@@ -94,9 +107,10 @@ async function tickPair(pair, timestamp) {
     const candleCount = config.strategy.mode === "ny_asian_continuation"
       ? (config.strategy.nyAsianContinuation?.lookbackCandles ?? 220)
       : 100;
-    const latestCandles = await icmarkets.getCandles(pair, config.granularity, candleCount);
-    if (Array.isArray(latestCandles) && latestCandles.length > 0) {
-      state.candleCache = latestCandles;
+    const latestCandles = await getLiveMidCandles(pair, config.granularity, candleCount + 2);
+    const closedCandles = onlyClosedCandles(latestCandles, config.granularity, now);
+    if (closedCandles.length > 0) {
+      state.candleCache = closedCandles.slice(-candleCount);
     }
   } catch (err) {
     if (!state.candleCache.length) {
@@ -108,13 +122,16 @@ async function tickPair(pair, timestamp) {
   let higherTimeframe = { trend: 'neutral', ema: null, close: null, reason: 'Higher-timeframe filter disabled' };
   if (htfConfig.enabled) {
     try {
-      const htfCandles = await icmarkets.getCandles(
+      const htfGranularity = htfConfig.granularity || config.higherTimeframe || "H1";
+      const htfCandleCount = htfConfig.lookbackCandles || 250;
+      const htfCandles = await getLiveMidCandles(
         pair,
-        htfConfig.granularity || config.higherTimeframe || "H1",
-        htfConfig.lookbackCandles || 250,
+        htfGranularity,
+        htfCandleCount + 2,
       );
-      if (Array.isArray(htfCandles) && htfCandles.length > 0) {
-        state.higherTimeframeCandleCache = htfCandles;
+      const closedHtfCandles = onlyClosedCandles(htfCandles, htfGranularity, now);
+      if (closedHtfCandles.length > 0) {
+        state.higherTimeframeCandleCache = closedHtfCandles.slice(-htfCandleCount);
       }
     } catch (err) {
       if (!state.higherTimeframeCandleCache.length) {
@@ -146,6 +163,7 @@ async function tickPair(pair, timestamp) {
   await manageActiveTradeTimeExits(pair, state);
   await processPendingOrders(pair, state);
   if (state.activeTrades.length >= config.maxTradesPerPair) return;
+  if (!hasAvailableTradeSlot()) return;
 
   // 2. Generate signal
   const activeWindow = getActiveSessionWindowUTC(new Date());
@@ -167,6 +185,10 @@ async function tickPair(pair, timestamp) {
 
   // 3. Trade gate
   if (state.activeTrades.length >= config.maxTradesPerPair || state.pendingOrders.length > 0) return;
+  if (!hasAvailableTradeSlot()) {
+    console.log(`  ⛔ Account trade slot full: active + pending = ${getReservedTradeSlotCount()}/${getMaxTotalTrades()}`);
+    return;
+  }
 
   const action = signal.direction || signal.signal.toUpperCase(); // 'BUY' | 'SELL'
 
@@ -178,7 +200,7 @@ async function tickPair(pair, timestamp) {
 
   if (signal.signal === "buy_stop" || signal.signal === "sell_stop") {
     if (!AUTO_EXECUTE) return;
-    addPendingOrder(state, signal);
+    if (!addPendingOrder(state, signal)) return;
     saveState();
     await processPendingOrders(pair, state);
     return;
@@ -254,7 +276,80 @@ function noSignal(reason) {
   return { signal: "none", trend: "neutral", entry: null, sl: null, tp: null, riskPips: null, rewardPips: null, reason };
 }
 
+async function getLiveMidCandles(pair, granularity, count) {
+  const [bidCandles, askCandles] = await Promise.all([
+    icmarkets.getCandles(pair, granularity, count, null, null, 1),
+    icmarkets.getCandles(pair, granularity, count, null, null, 2),
+  ]);
+  return mergeBidAskCandles(bidCandles, askCandles);
+}
+
+function mergeBidAskCandles(bidCandles = [], askCandles = []) {
+  if (!Array.isArray(bidCandles) || !Array.isArray(askCandles)) return [];
+
+  const asksByTime = new Map(askCandles.map(candle => [candle.time, candle]));
+  return bidCandles
+    .map(bidCandle => {
+      const askCandle = asksByTime.get(bidCandle.time);
+      if (!askCandle) return null;
+
+      const bid = extractPriceFields(bidCandle);
+      const ask = extractPriceFields(askCandle);
+      if (!bid || !ask) return null;
+
+      return {
+        time: bidCandle.time,
+        complete: Boolean(bidCandle.complete && askCandle.complete),
+        volume: Math.max(Number(bidCandle.volume) || 0, Number(askCandle.volume) || 0),
+        bid: formatPriceFields(bid),
+        ask: formatPriceFields(ask),
+        mid: formatPriceFields({
+          o: (bid.o + ask.o) / 2,
+          h: (bid.h + ask.h) / 2,
+          l: (bid.l + ask.l) / 2,
+          c: (bid.c + ask.c) / 2,
+        }),
+      };
+    })
+    .filter(Boolean);
+}
+
+function extractPriceFields(candle) {
+  const source = candle?.mid ?? candle?.bid ?? candle?.ask;
+  if (!source) return null;
+  const prices = {
+    o: Number(source.o),
+    h: Number(source.h),
+    l: Number(source.l),
+    c: Number(source.c),
+  };
+  return Object.values(prices).every(v => Number.isFinite(v) && v > 0) ? prices : null;
+}
+
+function formatPriceFields(prices) {
+  return {
+    o: prices.o.toFixed(5),
+    h: prices.h.toFixed(5),
+    l: prices.l.toFixed(5),
+    c: prices.c.toFixed(5),
+  };
+}
+
+function onlyClosedCandles(candles, granularity, nowMs = Date.now()) {
+  if (!Array.isArray(candles)) return [];
+  const periodMs = GRANULARITY_MS[String(granularity || "").toUpperCase()] ?? GRANULARITY_MS.M5;
+  return candles.filter(candle => {
+    const openMs = new Date(candle?.time).getTime();
+    return Number.isFinite(openMs) && openMs + periodMs <= nowMs;
+  });
+}
+
 function addPendingOrder(state, signal) {
+  if (!hasAvailableTradeSlot()) {
+    console.log(`  ⛔ Pending ${signal.direction} stop not armed: active + pending = ${getReservedTradeSlotCount()}/${getMaxTotalTrades()}`);
+    return false;
+  }
+
   const latest = state.candleCache.at(-1);
   const setupMs = latest?.time ? new Date(latest.time).getTime() : Date.now();
   const expiresAfterBars = signal.pendingExpiryBars ?? 3;
@@ -281,6 +376,7 @@ function addPendingOrder(state, signal) {
     reason: signal.reason,
   });
   console.log(`  📌 Pending ${signal.direction} stop armed @ ${signal.entry} (expires in ${expiresAfterBars} M5 bars).`);
+  return true;
 }
 
 async function processPendingOrders(pair, state) {
@@ -300,6 +396,10 @@ async function processPendingOrders(pair, state) {
       continue;
     }
     if (state.activeTrades.length >= config.maxTradesPerPair) {
+      kept.push(order);
+      continue;
+    }
+    if (getOpenTradeCount() >= getMaxTotalTrades()) {
       kept.push(order);
       continue;
     }
@@ -471,6 +571,25 @@ function getOpenTradeCount() {
   let count = 0;
   for (const [, state] of pairState) count += state.activeTrades.length;
   return count;
+}
+
+function getPendingOrderCount() {
+  let count = 0;
+  for (const [, state] of pairState) count += state.pendingOrders.length;
+  return count;
+}
+
+function getReservedTradeSlotCount() {
+  return getOpenTradeCount() + getPendingOrderCount();
+}
+
+function getMaxTotalTrades() {
+  const configured = Number(config.maxTotalTrades);
+  return Number.isFinite(configured) && configured > 0 ? configured : Infinity;
+}
+
+function hasAvailableTradeSlot() {
+  return getReservedTradeSlotCount() < getMaxTotalTrades();
 }
 
 function saveState() {

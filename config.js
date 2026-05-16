@@ -70,7 +70,7 @@ export const config = {
 
   // ─── Strategy Scope ─────────────────────────────────────────────────────────
   defaultInstrument:   "EUR_USD",
-  tradingPairs:        envList("TRADING_PAIRS", ["EUR_USD"]),
+  tradingPairs:        envList("TRADING_PAIRS", ["EUR_USD", "GBP_USD", "USD_JPY"]),
   granularity:         "M5",
   higherTimeframe:     "H1",
   pollIntervalSeconds: 10,
@@ -101,6 +101,7 @@ export const config = {
   maxTotalTrades:   1, // Focus on one quality trade at a time
   maxTradesPerPair: 1,
   maxPositionSizeUnits: 100_000,
+  maxSlippagePips: envNumber("MAX_SLIPPAGE_PIPS", 0.5),
 
   strategy: {
     mode: process.env.STRATEGY_MODE || "ny_asian_continuation",
