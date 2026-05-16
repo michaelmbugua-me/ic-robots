@@ -53,7 +53,7 @@ export const config = {
   ctraderClientSecret: process.env.CTRADER_CLIENT_SECRET || "",
   ctraderAccessToken:  process.env.CTRADER_ACCESS_TOKEN  || "",
   ctraderAccountId:    Number(process.env.CTRADER_ACCOUNT_ID) || 0,
-  ctraderEnv:          "demo", 
+  ctraderEnv:          process.env.CTRADER_ENV || "demo",
 
   ctraderSymbolIds: {
     "EUR_USD": 1,

@@ -54,6 +54,8 @@ const PT = {
   SYMBOLS_LIST_RES:    2115,
   SYMBOL_BY_ID_REQ:    2116,
   SYMBOL_BY_ID_RES:    2117,
+  GET_ACCOUNTS_BY_ACCESS_TOKEN_REQ: 2149,
+  GET_ACCOUNTS_BY_ACCESS_TOKEN_RES: 2150,
 };
 
 // Map of payloadType → Proto message name (for decoding)
@@ -84,6 +86,8 @@ const PT_NAMES = {
   2110: "ProtoOAAmendPositionSLTPReq",
   2111: "ProtoOAClosePositionReq",
   2142: "ProtoOAErrorRes",
+  2149: "ProtoOAGetAccountListByAccessTokenReq",
+  2150: "ProtoOAGetAccountListByAccessTokenRes",
 };
 
 // Granularity string → cTrader period integer
@@ -210,21 +214,14 @@ export class ICMarketsClient {
   // ─── Authentication ────────────────────────────────────────────────────────
 
   async authenticate() {
-    // Step 0: check version (some proxies require this as first message)
-    await this._send(PT.VERSION_REQ, {
-      payloadType: PT.VERSION_REQ
-    });
-
     // Step 1: authenticate the application
     await this._send(PT.APP_AUTH_REQ, {
-      payloadType: PT.APP_AUTH_REQ,
       clientId:     config.ctraderClientId,
       clientSecret: config.ctraderClientSecret,
     });
 
     // Step 2: authenticate the trading account
     await this._send(PT.ACCOUNT_AUTH_REQ, {
-      payloadType: PT.ACCOUNT_AUTH_REQ,
       ctidTraderAccountId: Long.fromValue(config.ctraderAccountId),
       accessToken:         config.ctraderAccessToken,
     });
@@ -627,6 +624,7 @@ export class ICMarketsClient {
     // 1. Encode the inner payload
     const typeName = PT_NAMES[payloadType];
     if (!typeName) throw new Error(`Unknown payloadType: ${payloadType}`);
+    
     const InnerType = this.root.lookupType(typeName);
     const innerMsg = InnerType.create(payload);
     const innerBuffer = InnerType.encode(innerMsg).finish();
@@ -701,8 +699,11 @@ export class ICMarketsClient {
       const pending = this.pendingRequests.get(clientMsgId);
       if (pending) {
         this.pendingRequests.delete(clientMsgId);
+        const errorCode = payload?.errorCode || "UNKNOWN";
+        const description = payload?.description || "";
+        console.error(`❌ cTrader Error [${clientMsgId}]: ${errorCode} - ${description}`);
         pending.reject(
-          new Error(`cTrader error ${payload?.errorCode}: ${payload?.description ?? ""}`)
+          new Error(`cTrader error ${errorCode}: ${description}`)
         );
       }
       return;

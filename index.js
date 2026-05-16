@@ -46,6 +46,8 @@ async function run() {
   await icmarkets.connect();
   console.log(`  ✅ Connected.`);
 
+  await new Promise(r => setTimeout(r, 1000));
+
   console.log(`  🔐 Authenticating trading account...`);
   await icmarkets.authenticate();
   console.log(`  ✅ Authenticated.`);
