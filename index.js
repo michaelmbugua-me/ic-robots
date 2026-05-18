@@ -42,6 +42,8 @@ function getState(pair) {
       sessionTradeCounts: new Map(),
       cooldownCandlesRemaining: 0,
       lastCandleTime: null,
+      lastEntryCandleFetchAt: 0,
+      lastHigherTimeframeCandleFetchAt: 0,
       lastLogTime: 0,
     });
   }
@@ -102,19 +104,22 @@ async function tickPair(pair, timestamp) {
   const now   = Date.now();
   const isJPY = pair.includes("JPY");
 
-  // 1. Refresh candles every poll to avoid stale trend/signal state.
-  try {
-    const candleCount = config.strategy.mode === "ny_asian_continuation"
-      ? (config.strategy.nyAsianContinuation?.lookbackCandles ?? 220)
-      : 100;
-    const latestCandles = await getLiveMidCandles(pair, config.granularity, candleCount + 2);
-    const closedCandles = onlyClosedCandles(latestCandles, config.granularity, now);
-    if (closedCandles.length > 0) {
-      state.candleCache = closedCandles.slice(-candleCount);
-    }
-  } catch (err) {
-    if (!state.candleCache.length) {
-      throw err;
+  // 1. Refresh candles only when a new closed candle can exist.
+  const candleCount = config.strategy.mode === "ny_asian_continuation"
+    ? (config.strategy.nyAsianContinuation?.lookbackCandles ?? 220)
+    : 100;
+  if (shouldRefreshClosedCandles(state.candleCache, config.granularity, now, state.lastEntryCandleFetchAt)) {
+    state.lastEntryCandleFetchAt = now;
+    try {
+      const latestCandles = await getLiveMidCandles(pair, config.granularity, candleCount + 2);
+      const closedCandles = onlyClosedCandles(latestCandles, config.granularity, now);
+      if (closedCandles.length > 0) {
+        state.candleCache = closedCandles.slice(-candleCount);
+      }
+    } catch (err) {
+      if (!state.candleCache.length) {
+        throw err;
+      }
     }
   }
 
@@ -124,14 +129,17 @@ async function tickPair(pair, timestamp) {
     try {
       const htfGranularity = htfConfig.granularity || config.higherTimeframe || "H1";
       const htfCandleCount = htfConfig.lookbackCandles || 250;
-      const htfCandles = await getLiveMidCandles(
-        pair,
-        htfGranularity,
-        htfCandleCount + 2,
-      );
-      const closedHtfCandles = onlyClosedCandles(htfCandles, htfGranularity, now);
-      if (closedHtfCandles.length > 0) {
-        state.higherTimeframeCandleCache = closedHtfCandles.slice(-htfCandleCount);
+      if (shouldRefreshClosedCandles(state.higherTimeframeCandleCache, htfGranularity, now, state.lastHigherTimeframeCandleFetchAt)) {
+        state.lastHigherTimeframeCandleFetchAt = now;
+        const htfCandles = await getLiveMidCandles(
+          pair,
+          htfGranularity,
+          htfCandleCount + 2,
+        );
+        const closedHtfCandles = onlyClosedCandles(htfCandles, htfGranularity, now);
+        if (closedHtfCandles.length > 0) {
+          state.higherTimeframeCandleCache = closedHtfCandles.slice(-htfCandleCount);
+        }
       }
     } catch (err) {
       if (!state.higherTimeframeCandleCache.length) {
@@ -342,6 +350,24 @@ function onlyClosedCandles(candles, granularity, nowMs = Date.now()) {
     const openMs = new Date(candle?.time).getTime();
     return Number.isFinite(openMs) && openMs + periodMs <= nowMs;
   });
+}
+
+function shouldRefreshClosedCandles(cache, granularity, nowMs = Date.now(), lastFetchMs = 0) {
+  const periodMs = GRANULARITY_MS[String(granularity || "").toUpperCase()] ?? GRANULARITY_MS.M5;
+  const retryMs = Math.min(30_000, Math.max(10_000, Math.floor(periodMs / 4)));
+
+  if (!Array.isArray(cache) || cache.length === 0) {
+    return nowMs - (lastFetchMs || 0) >= retryMs;
+  }
+
+  const lastClosedOpenMs = new Date(cache.at(-1)?.time).getTime();
+  if (!Number.isFinite(lastClosedOpenMs)) {
+    return nowMs - (lastFetchMs || 0) >= retryMs;
+  }
+
+  // If the latest cached closed candle opened at T, the next closed candle is
+  // not available until T + 2 periods (plus a small broker timestamp grace).
+  return nowMs >= lastClosedOpenMs + (periodMs * 2) + 2_000;
 }
 
 function addPendingOrder(state, signal) {

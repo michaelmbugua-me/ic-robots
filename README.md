@@ -258,3 +258,13 @@ no cooldown and a 2-candle cooldown in the current backtests.
 - Token expires every ~30 days — re-run `node auth.js`.
 - Scalping is high-risk — most retail traders lose money.
 - This bot is experimental and provided for educational purposes.
+
+Trade start
+12:30
+3:30 PM
+Trade end
+15:30
+6:30 PM
+Force exit all
+16:00
+7:00 PM

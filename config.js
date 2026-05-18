@@ -1,5 +1,5 @@
 /**
- * Configuration — 5-10-20 EMA Scalping Strategy
+ * Configuration — Scalping Strategy
  * EURUSD M5 — IC Markets cTrader
  */
 
@@ -54,6 +54,13 @@ export const config = {
   ctraderAccessToken:  process.env.CTRADER_ACCESS_TOKEN  || "",
   ctraderAccountId:    Number(process.env.CTRADER_ACCOUNT_ID) || 0,
   ctraderEnv:          process.env.CTRADER_ENV || "demo",
+  ctraderRateLimit: {
+    // Throttle only non-trade API calls (candles/symbol/account lookups).
+    // Order placement/close/amend requests bypass this queue so execution is not delayed.
+    nonTradeMinIntervalMs: envNumber("CTRADER_NON_TRADE_MIN_INTERVAL_MS", 750),
+    maxNonTradeRequestsPerMinute: envNumber("CTRADER_MAX_NON_TRADE_REQUESTS_PER_MINUTE", 40),
+    rateLimitBackoffMs: envNumber("CTRADER_RATE_LIMIT_BACKOFF_MS", 30_000),
+  },
 
   ctraderSymbolIds: {
     "EUR_USD": 1,
@@ -88,11 +95,11 @@ export const config = {
 
   // ─── Financial Plan & Risk Management ──────────────────────────────────
   risk: {
-    accountCapitalKES:    50_000,
+    accountCapitalKES:    250_000,
     riskPerTradePercent:  envNumber("RISK_PER_TRADE_PERCENT", 0.5),
     enforceDailyStopLoss: envBool("ENFORCE_DAILY_STOP_LOSS", true),
     dailyStopLossKES:     envNumber("DAILY_STOP_LOSS_KES", 300),
-    dailyProfitTargetKES: envNumber("DAILY_PROFIT_TARGET_KES", 1000),
+    dailyProfitTargetKES: envNumber("DAILY_PROFIT_TARGET_KES", 5000),
     maxLeverage:          100,
     usdKesRate:           129.0,
   },

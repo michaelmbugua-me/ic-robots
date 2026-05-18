@@ -7,7 +7,7 @@ import { detectHigherTimeframeTrend, generateNYAsianContinuationSignal, generate
 import { config } from "./config.js";
 import { calculatePipValueUSD, calculateRiskVolume } from "./position-sizing.js";
 
-const INITIAL_BALANCE = 385; 
+const INITIAL_BALANCE = config.risk.accountCapitalKES / 129.0;
 const COMMISSION_SIDE_USD = 3.00;
 const SPREAD_PIPS = 0.5; 
 const SLIPPAGE_PIPS = 0.2;
@@ -21,7 +21,7 @@ const strategyMode = config.strategy.mode || "ema_pullback";
 
 async function main() {
   console.log(`\n${"═".repeat(60)}`);
-  console.log(`  🤖  5-10-20 EMA SCALPING BACKTESTER (MULTI-PAIR)`);
+  console.log(`  🤖  CUSTOM BACKTESTER (MULTI-PAIR)`);
   console.log(`  Pairs    : ${PAIRS.join(", ")}`);
   console.log(`  Strategy : ${strategyMode}`);
   console.log(`${"═".repeat(60)}\n`);

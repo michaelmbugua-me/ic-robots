@@ -508,3 +508,9 @@ Based strictly on what was found in the code — no assumptions:
 
 *This document reflects the actual state of the code as of May 2026. It is intended as the ground-truth baseline before any further development.*
 
+Trade start
+3:30 PM
+Trade end
+6:30 PM
+Force exit all
+7:00 PM

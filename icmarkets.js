@@ -104,6 +104,17 @@ const PERIOD_MS = {
   H1: 3_600_000, H4: 14_400_000, D1: 86_400_000,
 };
 
+const RATE_LIMIT_ERROR_CODE = "REQUEST_FREQUENCY_EXCEEDED";
+
+const THROTTLE_BYPASS_PAYLOAD_TYPES = new Set([
+  PT.HEARTBEAT,
+  PT.APP_AUTH_REQ,
+  PT.ACCOUNT_AUTH_REQ,
+  PT.NEW_ORDER_REQ,
+  PT.CLOSE_POSITION_REQ,
+  PT.AMEND_POSITION_SLTP_REQ,
+]);
+
 export class ICMarketsClient {
   constructor() {
     this.ws              = null;
@@ -121,6 +132,11 @@ export class ICMarketsClient {
     this.healthCheckTimer = null;
     this.onConnectionLost = null;       // Callback for emergency alert
     this.keepaliveTimer  = null;        // GCP idle connection keepalive
+    this.nonTradeQueue = [];
+    this.processingNonTradeQueue = false;
+    this.lastNonTradeRequestAt = 0;
+    this.nonTradeRequestTimestamps = [];
+    this.rateLimitBackoffUntil = 0;
   }
 
   // ─── Connection ────────────────────────────────────────────────────────────
@@ -297,7 +313,7 @@ export class ICMarketsClient {
     };
   }
 
-  async getSymbol(symbolName) {
+  async getSymbol(symbolName, { priority = "normal" } = {}) {
     if (this.symbols.has(symbolName)) return this.symbols.get(symbolName);
 
     // 1. Get the light symbol to find the symbolId
@@ -305,7 +321,7 @@ export class ICMarketsClient {
       payloadType: PT.SYMBOLS_LIST_REQ,
       ctidTraderAccountId: Long.fromValue(config.ctraderAccountId),
       includeArchivedSymbols: false,
-    });
+    }, { priority });
 
     // Try multiple name variations: EUR_USD -> EUR/USD, EURUSD, EUR_USD
     const variations = [
@@ -327,7 +343,7 @@ export class ICMarketsClient {
       payloadType: PT.SYMBOL_BY_ID_REQ,
       ctidTraderAccountId: Long.fromValue(config.ctraderAccountId),
       symbolId: [light.symbolId],
-    });
+    }, { priority });
 
     const s = res.symbol[0];
     const details = {
@@ -350,8 +366,13 @@ export class ICMarketsClient {
    * High-level wrapper for index.js
    */
   async openPosition(pair, action, units, stopLoss, takeProfit, entryPriceHint) {
-    // Ensure we have symbol details (for stepVolume/minVolume) before opening
-    await this.getSymbol(pair);
+    // Best-effort symbol details lookup for stepVolume/minVolume. If cTrader
+    // rate-limits metadata, still place the order using config.ctraderSymbolIds.
+    try {
+      await this.getSymbol(pair, { priority: "high" });
+    } catch (err) {
+      console.warn(`  ⚠️  ${pair} symbol details unavailable before order: ${err.message}`);
+    }
 
     const isBuy = action === "BUY";
     const signedUnits = isBuy ? units : -units;
@@ -613,7 +634,7 @@ export class ICMarketsClient {
   /**
    * Send a message and (optionally) wait for the corresponding response.
    */
-  _send(payloadType, payload, { expectEvent = false } = {}) {
+  _send(payloadType, payload, { expectEvent = false, priority = "normal" } = {}) {
     // Guard: don't send on a closed/closing socket
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return Promise.reject(new Error("WebSocket not open — skipping send"));
@@ -638,13 +659,104 @@ export class ICMarketsClient {
     // 3. Send the outer buffer as a binary frame (NO 4-byte header for WebSocket)
     const frame = outerBuffer;
 
+    if (priority === "high" || THROTTLE_BYPASS_PAYLOAD_TYPES.has(payloadType)) {
+      return this._sendFrame({ payloadType, typeName, clientMsgId, frame, expectEvent });
+    }
+
+    return this._enqueueNonTradeRequest({ payloadType, typeName, clientMsgId, frame, expectEvent });
+  }
+
+  _enqueueNonTradeRequest(request) {
     return new Promise((resolve, reject) => {
+      this.nonTradeQueue.push({ ...request, resolve, reject });
+      this._processNonTradeQueue().catch((err) => {
+        console.error("❌ cTrader request queue error:", err.message);
+      });
+    });
+  }
+
+  async _processNonTradeQueue() {
+    if (this.processingNonTradeQueue) return;
+    this.processingNonTradeQueue = true;
+
+    try {
+      while (this.nonTradeQueue.length > 0) {
+        const request = this.nonTradeQueue.shift();
+        await this._waitForNonTradeSlot();
+        this._recordNonTradeRequestSent();
+        this._sendFrame(request).then(request.resolve, request.reject);
+      }
+    } finally {
+      this.processingNonTradeQueue = false;
+      if (this.nonTradeQueue.length > 0) {
+        this._processNonTradeQueue().catch((err) => {
+          console.error("❌ cTrader request queue error:", err.message);
+        });
+      }
+    }
+  }
+
+  async _waitForNonTradeSlot() {
+    const cfg = this._rateLimitConfig();
+
+    while (true) {
+      const now = Date.now();
+      this.nonTradeRequestTimestamps = this.nonTradeRequestTimestamps.filter(ts => now - ts < 60_000);
+
+      if (now < this.rateLimitBackoffUntil) {
+        await sleep(Math.min(this.rateLimitBackoffUntil - now, 5_000));
+        continue;
+      }
+
+      if (cfg.maxPerMinute > 0 && this.nonTradeRequestTimestamps.length >= cfg.maxPerMinute) {
+        const oldest = this.nonTradeRequestTimestamps[0];
+        await sleep(Math.max(250, oldest + 60_000 - now));
+        continue;
+      }
+
+      const waitMs = cfg.minIntervalMs - (now - this.lastNonTradeRequestAt);
+      if (waitMs > 0) {
+        await sleep(waitMs);
+        continue;
+      }
+
+      return;
+    }
+  }
+
+  _recordNonTradeRequestSent() {
+    const now = Date.now();
+    this.lastNonTradeRequestAt = now;
+    this.nonTradeRequestTimestamps.push(now);
+  }
+
+  _rateLimitConfig() {
+    const cfg = config.ctraderRateLimit ?? {};
+    return {
+      minIntervalMs: Math.max(0, Number(cfg.nonTradeMinIntervalMs ?? 750)),
+      maxPerMinute: Math.max(0, Number(cfg.maxNonTradeRequestsPerMinute ?? 40)),
+      backoffMs: Math.max(1_000, Number(cfg.rateLimitBackoffMs ?? 30_000)),
+    };
+  }
+
+  _sendFrame({ payloadType, typeName, clientMsgId, frame, expectEvent }) {
+    return new Promise((resolve, reject) => {
+      let timeoutId = null;
+      const cleanupResolve = (payload) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        resolve(payload);
+      };
+      const cleanupReject = (err) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        reject(err);
+      };
+
       if (!expectEvent) {
-        this.pendingRequests.set(clientMsgId, { resolve, reject });
-        setTimeout(() => {
+        this.pendingRequests.set(clientMsgId, { resolve: cleanupResolve, reject: cleanupReject });
+        timeoutId = setTimeout(() => {
           if (this.pendingRequests.has(clientMsgId)) {
             this.pendingRequests.delete(clientMsgId);
-            reject(new Error(`Timeout waiting for response to ${typeName} (${payloadType})`));
+            cleanupReject(new Error(`Timeout waiting for response to ${typeName} (${payloadType})`));
           }
         }, 15_000);
       }
@@ -652,9 +764,9 @@ export class ICMarketsClient {
       this.ws.send(frame, { binary: true }, (err) => {
         if (err) {
           this.pendingRequests.delete(clientMsgId);
-          reject(err);
+          cleanupReject(err);
         } else if (expectEvent) {
-          resolve(null);
+          cleanupResolve(null);
         }
       });
     });
@@ -697,14 +809,19 @@ export class ICMarketsClient {
     // Error response — reject the pending request
     if (payloadType === PT.ERROR_RES) {
       const pending = this.pendingRequests.get(clientMsgId);
+      const errorCode = payload?.errorCode || "UNKNOWN";
+      const description = payload?.description || "";
+      if (errorCode === RATE_LIMIT_ERROR_CODE) {
+        const backoffMs = this._rateLimitConfig().backoffMs;
+        this.rateLimitBackoffUntil = Math.max(this.rateLimitBackoffUntil, Date.now() + backoffMs);
+        console.warn(`⚠️  cTrader rate limit hit; pausing non-trade requests for ${(backoffMs / 1000).toFixed(0)}s.`);
+      }
       if (pending) {
         this.pendingRequests.delete(clientMsgId);
-        const errorCode = payload?.errorCode || "UNKNOWN";
-        const description = payload?.description || "";
         console.error(`❌ cTrader Error [${clientMsgId}]: ${errorCode} - ${description}`);
-        pending.reject(
-          new Error(`cTrader error ${errorCode}: ${description}`)
-        );
+        const err = new Error(`cTrader error ${errorCode}: ${description}`);
+        err.errorCode = errorCode;
+        pending.reject(err);
       }
       return;
     }
