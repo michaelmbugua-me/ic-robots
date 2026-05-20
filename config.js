@@ -110,8 +110,8 @@ export const config = {
   },
 
   // ─── Trade Limits ───────────────────────────────────────────────────────
-  maxTotalTrades:   3, // Allow up to one active/pending setup per configured pair
-  maxTradesPerPair: 1,
+  maxTotalTrades:   envNumber("MAX_TOTAL_TRADES", 3), // Allow up to one active/pending setup per configured pair by default
+  maxTradesPerPair: envNumber("MAX_TRADES_PER_PAIR", 1),
   maxPositionSizeUnits: 100_000,
   maxSlippagePips: envNumber("MAX_SLIPPAGE_PIPS", 0.5),
   execution: {
@@ -122,8 +122,8 @@ export const config = {
     debugOrderPayload: envBool("DEBUG_ORDER_PAYLOAD", false),
   },
   backtest: {
-    spreadPips: envNumber("BACKTEST_SPREAD_PIPS", 0.5),
-    slippagePips: envNumber("BACKTEST_SLIPPAGE_PIPS", 0.2),
+    spreadPips: envNumber("BACKTEST_SPREAD_PIPS", 0.7),
+    slippagePips: envNumber("BACKTEST_SLIPPAGE_PIPS", 0.3),
   },
 
   strategy: {
@@ -152,7 +152,7 @@ export const config = {
       stopBufferPips: envNumber("NY_ASIAN_STOP_BUFFER_PIPS", 0.5),
       minBreakPips: envNumber("NY_ASIAN_MIN_BREAK_PIPS", 3.0),
       minRiskPips: envNumber("NY_ASIAN_MIN_RISK_PIPS", 5),
-      maxRiskPips: envNumber("NY_ASIAN_MAX_RISK_PIPS", 10),
+      maxRiskPips: envNumber("NY_ASIAN_MAX_RISK_PIPS", 12),
       rrRatio: envNumber("NY_ASIAN_RR_RATIO", 1.2),
       pendingExpiryBars: envNumber("NY_ASIAN_PENDING_EXPIRY_BARS", 3),
       timeExitBars: envNumber("NY_ASIAN_TIME_EXIT_BARS", 12),

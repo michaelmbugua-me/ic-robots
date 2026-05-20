@@ -222,7 +222,7 @@ For 50,000 KES account:
 
 ```text
 Risk per trade: ~250 KES
-Daily stop: ~300 KES
+Daily stop: ~3000 KES
 Daily target: ~300 KES
 Max open trades total: 1
 ```

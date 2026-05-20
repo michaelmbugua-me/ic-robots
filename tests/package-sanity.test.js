@@ -17,9 +17,11 @@ assert.ok(!pkg.scripts.auto.includes("EMA_SEPARATION_MIN_PIPS"), "auto script sh
 assert.ok(!pkg.scripts["backtest-mock"], "stale backtest-mock script should stay removed");
 assert.ok(!pkg.scripts["backtest-multi-mock"], "stale backtest-multi-mock script should stay removed");
 assert.deepEqual(config.strategy.supportedModes, ["ny_asian_continuation"], "only the active strategy mode should be supported");
-assert.equal(config.backtest.spreadPips, 0.5, "backtest spread default should stay explicit and configurable");
-assert.equal(config.backtest.slippagePips, 0.2, "backtest slippage default should stay explicit and configurable");
+assert.equal(config.backtest.spreadPips, 0.7, "backtest spread default should stay conservative and configurable");
+assert.equal(config.backtest.slippagePips, 0.3, "backtest slippage default should stay conservative and configurable");
+assert.equal(config.risk.riskPerTradePercent, 0.5, "risk per trade should default to the recommended 0.5% live/backtest risk");
 assert.equal(config.strategy.nyAsianContinuation.minBreakPips, 3, "NY Asian continuation should default to the stronger 3-pip break filter");
+assert.equal(config.strategy.nyAsianContinuation.maxRiskPips, 12, "NY Asian continuation should default to the recommended 12-pip max risk window");
 assert.doesNotMatch(sourceText, /\bema_pullback\b|EMA_SEPARATION_MIN_PIPS|emaSeparationMinPips|generateSignal|detectTrend|hasPullback|hasEarlyTrigger|calcTradeParams/, "removed EMA pullback code should stay removed");
 assert.doesNotMatch(sourceText, /config\.strategy\.(nyOrb|sessionSweep|smashBuy|smashSell)/, "removed dormant strategy config refs should stay removed");
 assert.doesNotMatch(sourceText, /generate(NYOpeningRange|SessionSweep|Smash)/, "removed dormant strategy functions should stay removed");

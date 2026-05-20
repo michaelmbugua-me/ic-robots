@@ -142,7 +142,7 @@ export function generateNYAsianContinuationSignal(candles, opts = {}) {
   const stopBuffer = (opts.stopBufferPips ?? 0.5) * pipSize;
   const rrRatio = opts.rrRatio ?? 1.2;
   const minRiskPips = opts.minRiskPips ?? 5;
-  const maxRiskPips = opts.maxRiskPips ?? 10;
+  const maxRiskPips = opts.maxRiskPips ?? 12;
   const day = candleTime.toISOString().slice(0, 10);
 
   const priorNyCandles = norm.slice(0, last).filter(c => {
