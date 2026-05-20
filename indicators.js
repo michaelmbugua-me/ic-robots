@@ -137,7 +137,7 @@ export function generateNYAsianContinuationSignal(candles, opts = {}) {
     return NO_SIGNAL(`H1 trend filter blocked NY Asian continuation — HTF trend ${higherTimeframeTrend ?? 'none'}`);
   }
 
-  const minBreak = (opts.minBreakPips ?? 1.0) * pipSize;
+  const minBreak = (opts.minBreakPips ?? 3.0) * pipSize;
   const entryBuffer = (opts.entryBufferPips ?? 0.5) * pipSize;
   const stopBuffer = (opts.stopBufferPips ?? 0.5) * pipSize;
   const rrRatio = opts.rrRatio ?? 1.2;

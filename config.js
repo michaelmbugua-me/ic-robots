@@ -101,9 +101,9 @@ export const config = {
   // ─── Financial Plan & Risk Management ──────────────────────────────────
   risk: {
     accountCapitalKES:    250_000,
-    riskPerTradePercent:  envNumber("RISK_PER_TRADE_PERCENT", 1),
+    riskPerTradePercent:  envNumber("RISK_PER_TRADE_PERCENT", 0.5),
     enforceDailyStopLoss: envBool("ENFORCE_DAILY_STOP_LOSS", true),
-    dailyStopLossKES:     envNumber("DAILY_STOP_LOSS_KES", 300),
+    dailyStopLossKES:     envNumber("DAILY_STOP_LOSS_KES", 3000),
     dailyProfitTargetKES: envNumber("DAILY_PROFIT_TARGET_KES", 5000),
     maxLeverage:          100,
     usdKesRate:           129.0,
@@ -150,7 +150,7 @@ export const config = {
       requireH1Alignment: envBool("NY_ASIAN_REQUIRE_H1_ALIGNMENT", true),
       entryBufferPips: envNumber("NY_ASIAN_ENTRY_BUFFER_PIPS", 0.5),
       stopBufferPips: envNumber("NY_ASIAN_STOP_BUFFER_PIPS", 0.5),
-      minBreakPips: envNumber("NY_ASIAN_MIN_BREAK_PIPS", 1.0),
+      minBreakPips: envNumber("NY_ASIAN_MIN_BREAK_PIPS", 3.0),
       minRiskPips: envNumber("NY_ASIAN_MIN_RISK_PIPS", 5),
       maxRiskPips: envNumber("NY_ASIAN_MAX_RISK_PIPS", 10),
       rrRatio: envNumber("NY_ASIAN_RR_RATIO", 1.2),

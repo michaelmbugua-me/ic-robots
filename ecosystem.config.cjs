@@ -12,7 +12,7 @@ module.exports = {
         STRATEGY_MODE: 'ny_asian_continuation',
         TRADING_PAIRS: 'EUR_USD,GBP_USD,USD_JPY',
         SESSION_WINDOW_MODE: 'all_windows',
-        RISK_PER_TRADE_PERCENT: '1.0',
+        RISK_PER_TRADE_PERCENT: '0.5',
         ENFORCE_DAILY_STOP_LOSS: 'true',
         DAILY_STOP_LOSS_KES: '300',
         DAILY_PROFIT_TARGET_KES: '5000',
