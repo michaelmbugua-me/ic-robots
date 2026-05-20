@@ -37,6 +37,8 @@ const PT = {
   VERSION_REQ:         2104,
   VERSION_RES:         2105,
   NEW_ORDER_REQ:       2106,
+  CANCEL_ORDER_REQ:    2108,
+  AMEND_ORDER_REQ:     2109,
   TRADER_REQ:          2121,
   TRADER_RES:          2122,
   EXECUTION_EVENT:     2126,
@@ -68,6 +70,8 @@ const PT_NAMES = {
   2104: "ProtoOAVersionReq",
   2105: "ProtoOAVersionRes",
   2106: "ProtoOANewOrderReq",
+  2108: "ProtoOACancelOrderReq",
+  2109: "ProtoOAAmendOrderReq",
   2114: "ProtoOASymbolsListReq",
   2115: "ProtoOASymbolsListRes",
   2116: "ProtoOASymbolByIdReq",
@@ -111,6 +115,8 @@ const THROTTLE_BYPASS_PAYLOAD_TYPES = new Set([
   PT.APP_AUTH_REQ,
   PT.ACCOUNT_AUTH_REQ,
   PT.NEW_ORDER_REQ,
+  PT.CANCEL_ORDER_REQ,
+  PT.AMEND_ORDER_REQ,
   PT.CLOSE_POSITION_REQ,
   PT.AMEND_POSITION_SLTP_REQ,
 ]);
@@ -138,6 +144,7 @@ export class ICMarketsClient {
     this.nonTradeRequestTimestamps = [];
     this.rateLimitBackoffUntil = 0;
     this.staleConnectionRecoveryStarted = false;
+    this.subscribedSpotInstruments = new Set();
   }
 
   // ─── Connection ────────────────────────────────────────────────────────────
@@ -225,6 +232,7 @@ export class ICMarketsClient {
     try {
       await this.connect();
       await this.authenticate();
+      await this._resubscribeSpots();
       console.log("✅ Reconnected.\n");
     } catch (err) {
       console.error("Reconnect failed:", err.message);
@@ -399,10 +407,101 @@ export class ICMarketsClient {
       entryPrice
     });
 
+    if (res?.id && res.id !== "unknown" && (stopLoss || takeProfit)) {
+      try {
+        await this.amendPositionSLTP(res.id, stopLoss, takeProfit);
+      } catch (err) {
+        console.warn(`  ⚠️  ${pair} post-fill SL/TP amend failed: ${err.message}`);
+      }
+    }
+
     return {
       positionId: res.id,
       price: res.price
     };
+  }
+
+  async placeStopOrder({ pair, direction, units, entry, stopLoss, takeProfit, expiresAtMs, clientOrderId, comment }) {
+    try {
+      await this.getSymbol(pair, { priority: "high" });
+    } catch (err) {
+      console.warn(`  ⚠️  ${pair} symbol details unavailable before stop order: ${err.message}`);
+    }
+
+    const symbolId = this._resolveSymbolId(pair);
+    const isBuy = direction === "BUY";
+    const volume = this._toInternalVolume(pair, Math.abs(units));
+    const payload = {
+      payloadType: PT.NEW_ORDER_REQ,
+      ctidTraderAccountId: Long.fromValue(config.ctraderAccountId),
+      symbolId: Long.fromValue(symbolId),
+      orderType: 3, // STOP
+      tradeSide: isBuy ? 1 : 2,
+      volume: Long.fromValue(volume),
+      stopPrice: Number(Number(entry).toFixed(5)),
+      timeInForce: 1, // GOOD_TILL_DATE
+      expirationTimestamp: Long.fromValue(Math.floor(Number(expiresAtMs))),
+      stopLoss: Number(Number(stopLoss).toFixed(5)),
+      takeProfit: Number(Number(takeProfit).toFixed(5)),
+      stopTriggerMethod: 1, // TRADE: BUY by ask, SELL by bid
+      clientOrderId,
+      comment,
+      label: "kutoka_block",
+    };
+
+    const eventPromise = this._waitForPayloadType(PT.EXECUTION_EVENT, 20_000, (p) => {
+      const order = p.order ?? {};
+      const matchesClientOrder = clientOrderId && order.clientOrderId === clientOrderId;
+      const matchesShape = String(order.tradeData?.symbolId) === String(symbolId) &&
+        order.orderType === "STOP" && order.tradeData?.tradeSide === direction;
+      const isRelevantExecution = [2, 3, "ORDER_ACCEPTED", "ORDER_FILLED"].includes(p.executionType);
+      return isRelevantExecution && (matchesClientOrder || matchesShape);
+    });
+    const errPromise = this._waitForPayloadType(PT.ORDER_ERROR_EVENT, 20_000, (p) => {
+      return !p.orderId || !clientOrderId || String(p.description ?? "").includes(clientOrderId);
+    });
+
+    await this._send(PT.NEW_ORDER_REQ, payload, { expectEvent: true });
+    const result = await Promise.race([eventPromise, errPromise]);
+    if (!result || result._eventType === PT.ORDER_ERROR_EVENT) {
+      const errorMsg = result ? `Stop order rejected: ${result.errorCode} — ${result.description ?? ""}` : "Stop order timeout/unknown error";
+      throw new Error(errorMsg);
+    }
+
+    const order = result.order ?? {};
+    const position = result.position ?? {};
+    return {
+      orderId: order.orderId ? String(order.orderId) : null,
+      positionId: position.positionId ? String(position.positionId) : null,
+      executionType: result.executionType,
+      status: order.orderStatus,
+      price: order.executionPrice ?? position.price ?? null,
+      clientOrderId,
+    };
+  }
+
+  async cancelOrder(orderId) {
+    const numericOrderId = Long.fromValue(orderId);
+    const eventPromise = this._waitForPayloadType(PT.EXECUTION_EVENT, 20_000, (p) => {
+      return String(p.order?.orderId ?? "") === String(orderId) &&
+        [5, 8, "ORDER_CANCELLED", "ORDER_CANCEL_REJECTED"].includes(p.executionType);
+    });
+    const errPromise = this._waitForPayloadType(PT.ORDER_ERROR_EVENT, 20_000, (p) => {
+      return String(p.orderId ?? "") === String(orderId);
+    });
+
+    await this._send(PT.CANCEL_ORDER_REQ, {
+      payloadType: PT.CANCEL_ORDER_REQ,
+      ctidTraderAccountId: Long.fromValue(config.ctraderAccountId),
+      orderId: numericOrderId,
+    }, { expectEvent: true });
+
+    const result = await Promise.race([eventPromise, errPromise]);
+    if (!result || result._eventType === PT.ORDER_ERROR_EVENT || result.executionType === "ORDER_CANCEL_REJECTED" || result.executionType === 8) {
+      const errorMsg = result ? `Cancel rejected: ${result.errorCode ?? result.executionType} — ${result.description ?? ""}` : "Cancel timeout/unknown error";
+      throw new Error(errorMsg);
+    }
+    return result;
   }
 
   /**
@@ -420,24 +519,8 @@ export class ICMarketsClient {
     const isBuy    = units > 0;
     const absUnits = Math.abs(units);
 
-    // cTrader volume: 1 unit = 100 in their internal format (0.01 units)
-    let volume     = absUnits * 100;
-    
-    // Ensure volume is a multiple of stepVolume (Phase 4 fix)
-    const symbol = this.symbols.get(instrument);
-    if (symbol && symbol.stepVolume) {
-      const internalStep = symbol.stepVolume * 100;
-      const internalMin  = (symbol.minVolume || 0) * 100;
-      
-      // Round down to nearest step
-      volume = Math.floor(volume / internalStep) * internalStep;
-      
-      // Ensure it's at least the minimum volume
-      if (volume < internalMin) {
-        volume = internalMin;
-      }
-    }
-    
+    const volume = this._toInternalVolume(instrument, absUnits);
+
     const payload = {
       payloadType: PT.NEW_ORDER_REQ,
       ctidTraderAccountId: Long.fromValue(config.ctraderAccountId),
@@ -467,7 +550,9 @@ export class ICMarketsClient {
       payload.relativeTakeProfit = Long.fromValue(Math.round(dist * 100000));
     }
 
-    console.log("DEBUG: Order payload:", JSON.stringify(payload, (k, v) => typeof v === 'bigint' ? v.toString() : v));
+    if (config.execution?.debugOrderPayload) {
+      console.log("DEBUG: Order payload:", JSON.stringify(payload, (k, v) => typeof v === 'bigint' ? v.toString() : v));
+    }
 
     // Subscribe to execution events BEFORE sending the order
     // We want the ORDER_FILLED event specifically (executionType = 3)
@@ -521,6 +606,21 @@ export class ICMarketsClient {
     });
   }
 
+  _toInternalVolume(instrument, units) {
+    let volume = Math.abs(Number(units) || 0) * 100;
+
+    const symbol = this.symbols.get(instrument);
+    if (symbol && symbol.stepVolume) {
+      const internalStep = symbol.stepVolume * 100;
+      const internalMin  = (symbol.minVolume || 0) * 100;
+
+      volume = Math.floor(volume / internalStep) * internalStep;
+      if (volume < internalMin) volume = internalMin;
+    }
+
+    return Math.max(0, Math.floor(volume));
+  }
+
   /**
    * Update SL/TP of an existing position
    */
@@ -541,7 +641,10 @@ export class ICMarketsClient {
       ctidTraderAccountId: config.ctraderAccountId,
       returnProtectionOrders: true,
     });
-    return res.position || [];
+    return {
+      positions: res.position || [],
+      orders: res.order || [],
+    };
   }
 
   // ─── Symbol ID Resolution ──────────────────────────────────────────────────
@@ -592,6 +695,22 @@ export class ICMarketsClient {
       ctidTraderAccountId: config.ctraderAccountId,
       symbolId: [symbolId],
     });
+    this.subscribedSpotInstruments.add(instrument);
+  }
+
+  async _resubscribeSpots() {
+    for (const instrument of this.subscribedSpotInstruments) {
+      try {
+        const symbolId = this._resolveSymbolId(instrument);
+        await this._send(PT.SUBSCRIBE_SPOTS_REQ, {
+          ctidTraderAccountId: config.ctraderAccountId,
+          symbolId: [symbolId],
+        });
+        console.log(`  📡 Resubscribed to live ticks for ${instrument}.`);
+      } catch (err) {
+        console.error(`  ⚠️  Failed to resubscribe live ticks for ${instrument}: ${err.message}`);
+      }
+    }
   }
 
   /**

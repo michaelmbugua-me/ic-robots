@@ -9,8 +9,8 @@ import { calculatePipValueUSD, calculateRiskVolume } from "./position-sizing.js"
 
 const INITIAL_BALANCE = config.risk.accountCapitalKES / 129.0;
 const COMMISSION_SIDE_USD = 3.00;
-const SPREAD_PIPS = 0.5; 
-const SLIPPAGE_PIPS = 0.2;
+const SPREAD_PIPS = config.backtest?.spreadPips ?? 0.5;
+const SLIPPAGE_PIPS = config.backtest?.slippagePips ?? 0.2;
 const USD_KES_RATE = config.risk.usdKesRate ?? 129.0;
 
 let balance = INITIAL_BALANCE;

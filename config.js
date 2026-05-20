@@ -103,17 +103,28 @@ export const config = {
     accountCapitalKES:    250_000,
     riskPerTradePercent:  envNumber("RISK_PER_TRADE_PERCENT", 1),
     enforceDailyStopLoss: envBool("ENFORCE_DAILY_STOP_LOSS", true),
-    dailyStopLossKES:     envNumber("DAILY_STOP_LOSS_KES", 3000),
+    dailyStopLossKES:     envNumber("DAILY_STOP_LOSS_KES", 300),
     dailyProfitTargetKES: envNumber("DAILY_PROFIT_TARGET_KES", 5000),
     maxLeverage:          100,
     usdKesRate:           129.0,
   },
 
   // ─── Trade Limits ───────────────────────────────────────────────────────
-  maxTotalTrades:   1, // Focus on one quality trade at a time
+  maxTotalTrades:   3, // Allow up to one active/pending setup per configured pair
   maxTradesPerPair: 1,
   maxPositionSizeUnits: 100_000,
   maxSlippagePips: envNumber("MAX_SLIPPAGE_PIPS", 0.5),
+  execution: {
+    useBrokerStopOrders: envBool("USE_BROKER_STOP_ORDERS", true),
+    fallbackToLocalStops: envBool("FALLBACK_TO_LOCAL_STOPS", false),
+    maxSpreadPips: envNumber("MAX_SPREAD_PIPS", 1.5),
+    maxQuoteAgeMs: envNumber("MAX_QUOTE_AGE_MS", 5_000),
+    debugOrderPayload: envBool("DEBUG_ORDER_PAYLOAD", false),
+  },
+  backtest: {
+    spreadPips: envNumber("BACKTEST_SPREAD_PIPS", 0.5),
+    slippagePips: envNumber("BACKTEST_SLIPPAGE_PIPS", 0.2),
+  },
 
   strategy: {
     mode: strategyMode,

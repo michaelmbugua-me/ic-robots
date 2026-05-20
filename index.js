@@ -14,6 +14,7 @@ import { RiskManager } from "./risk-manager.js";
 const STATE_FILE = "state.json";
 const AUTO_EXECUTE = process.argv.includes("--auto-execute");
 const PAIRS = config.tradingPairs;
+const SPOT_EVENT = 2131;
 const GRANULARITY_MS = {
   M1: 60_000,
   M2: 2 * 60_000,
@@ -31,7 +32,10 @@ const GRANULARITY_MS = {
 const icmarkets = new ICMarketsClient();
 const riskManager = new RiskManager();
 const pairState = new Map();
+const symbolIdToPair = new Map();
 const savedActiveTradesById = loadSavedActiveTradesById();
+const savedPendingOrdersById = loadSavedPendingOrdersById();
+let tickInProgress = false;
 
 function getState(pair) {
   if (!pairState.has(pair)) {
@@ -42,6 +46,8 @@ function getState(pair) {
       pendingOrders: [],
       sessionTradeCounts: new Map(),
       cooldownCandlesRemaining: 0,
+      latestQuote: null,
+      pendingOrdersProcessing: false,
       lastCandleTime: null,
       lastEntryCandleFetchAt: 0,
       lastHigherTimeframeCandleFetchAt: 0,
@@ -69,17 +75,41 @@ async function run() {
   console.log(`  ✅ Authenticated.`);
 
   for (const pair of PAIRS) {
+    console.log(`  🔎 Resolving broker symbol for ${pair}...`);
+    try {
+      await icmarkets.getSymbol(pair);
+    } catch (err) {
+      console.warn(`  ⚠️  ${pair} symbol lookup failed; using configured symbol ID: ${err.message}`);
+    }
     console.log(`  🔄 Reconciling account state for ${pair}...`);
     await reconcileAccount(pair);
+    symbolIdToPair.set(String(icmarkets._resolveSymbolId(pair)), pair);
     console.log(`  📡 Subscribing to live ticks for ${pair}...`);
     await icmarkets.subscribeTicks(pair);
   }
 
+  icmarkets.on(SPOT_EVENT, (payload) => handleSpotEvent(payload));
   icmarkets.on(2126, (payload) => handleExecutionEvent(payload));
 
   console.log(`  ⏱️ Poll loop started (${config.pollIntervalSeconds}s interval).`);
-  await tick();
-  setInterval(tick, config.pollIntervalSeconds * 1000);
+  await scheduledTick();
+  setInterval(() => {
+    scheduledTick().catch(err => console.error(`  ❌ Poll loop error:`, err.message));
+  }, config.pollIntervalSeconds * 1000);
+}
+
+async function scheduledTick() {
+  if (tickInProgress) {
+    console.log(`  ⏭️  Previous poll still running; skipping this interval.`);
+    return;
+  }
+
+  tickInProgress = true;
+  try {
+    await tick();
+  } finally {
+    tickInProgress = false;
+  }
 }
 
 async function tick() {
@@ -168,7 +198,7 @@ async function tickPair(pair, timestamp) {
   if (state.cooldownCandlesRemaining > 0) return;
 
   await manageActiveTradeTimeExits(pair, state);
-  await processPendingOrders(pair, state);
+  await processPendingOrders(pair, state, { source: "poll" });
   if (state.activeTrades.length >= config.maxTradesPerPair) return;
   if (!hasAvailableTradeSlot()) return;
 
@@ -207,9 +237,7 @@ async function tickPair(pair, timestamp) {
 
   if (signal.signal === "buy_stop" || signal.signal === "sell_stop") {
     if (!AUTO_EXECUTE) return;
-    if (!addPendingOrder(state, signal)) return;
-    saveState();
-    await processPendingOrders(pair, state);
+    await armPendingStopOrder(pair, state, signal);
     return;
   }
 
@@ -229,6 +257,12 @@ async function tickPair(pair, timestamp) {
 
     const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry);
     if (units <= 0) return;
+
+    const spreadGate = validateExecutionSpread(pair, getState(pair));
+    if (!spreadGate.allowed) {
+      console.log(`  ⛔ Spread gate blocked trade: ${spreadGate.reason}`);
+      return;
+    }
 
     // Use the signal's entry price for more accurate relative SL/TP if possible,
     // though icmarkets.openPosition will fetch current market price for reliability.
@@ -387,19 +421,89 @@ function shouldRefreshClosedCandles(cache, granularity, nowMs = Date.now(), last
   return nowMs >= lastClosedOpenMs + (periodMs * 2) + 2_000;
 }
 
+async function armPendingStopOrder(pair, state, signal) {
+  if (config.execution?.useBrokerStopOrders !== false) {
+    const armed = await armBrokerStopOrder(pair, state, signal);
+    if (armed || !config.execution?.fallbackToLocalStops) return;
+    console.warn(`  ⚠️  Falling back to local ${signal.direction} stop simulation for ${pair}.`);
+  }
+
+  if (!addPendingOrder(state, signal)) return;
+  saveState();
+  await processPendingOrders(pair, state, { source: "poll" });
+}
+
+async function armBrokerStopOrder(pair, state, signal) {
+  if (!hasAvailableTradeSlot()) {
+    console.log(`  ⛔ Broker ${signal.direction} stop not placed: active + pending = ${getReservedTradeSlotCount()}/${getMaxTotalTrades()}`);
+    return true;
+  }
+
+  try {
+    const gate = riskManager.canTrade();
+    if (!gate.allowed) {
+      console.log(`  ⛔ Risk gate blocked broker stop: ${gate.reason}`);
+      return true;
+    }
+
+    const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry);
+    if (units <= 0) return true;
+
+    const pendingOrder = buildPendingOrder(state, signal, {
+      brokerManaged: true,
+      units,
+      clientOrderId: makeClientOrderId(pair, signal.direction),
+    });
+
+    const res = await icmarkets.placeStopOrder({
+      pair,
+      direction: signal.direction,
+      units,
+      entry: signal.entry,
+      stopLoss: signal.sl,
+      takeProfit: signal.tp,
+      expiresAtMs: pendingOrder.expiresAtMs,
+      clientOrderId: pendingOrder.clientOrderId,
+      comment: `${signal.strategy ?? "ny_asian"} ${signal.levelName ?? "range"}`,
+    });
+
+    if (res.positionId) {
+      adoptFilledPendingOrder(pair, state, { ...pendingOrder, brokerOrderId: res.orderId }, res.positionId, res.price);
+      console.log(`  ✅ Broker ${signal.direction} stop filled immediately @ ${signal.entry}.`);
+      return true;
+    }
+
+    if (!res.orderId) throw new Error("broker did not return orderId for accepted stop order");
+    pendingOrder.brokerOrderId = String(res.orderId);
+    state.pendingOrders.push(pendingOrder);
+    saveState();
+    console.log(`  📌 Broker ${signal.direction} stop placed @ ${signal.entry} (order ${pendingOrder.brokerOrderId}, expires ${new Date(pendingOrder.expiresAtMs).toISOString()}).`);
+    return true;
+  } catch (err) {
+    console.error(`  ❌ Broker stop placement failed for ${pair}:`, err.message);
+    return false;
+  }
+}
+
 function addPendingOrder(state, signal) {
   if (!hasAvailableTradeSlot()) {
     console.log(`  ⛔ Pending ${signal.direction} stop not armed: active + pending = ${getReservedTradeSlotCount()}/${getMaxTotalTrades()}`);
     return false;
   }
 
+  state.pendingOrders.push(buildPendingOrder(state, signal, { brokerManaged: false }));
+  console.log(`  📌 Local pending ${signal.direction} stop armed @ ${signal.entry} (expires in ${signal.pendingExpiryBars ?? 3} M5 bars).`);
+  return true;
+}
+
+function buildPendingOrder(state, signal, extras = {}) {
   const latest = state.candleCache.at(-1);
   const setupMs = latest?.time ? new Date(latest.time).getTime() : Date.now();
   const expiresAfterBars = signal.pendingExpiryBars ?? 3;
   const activeWindow = getActiveSessionWindowUTC(new Date());
   const sessionKey = getSessionKey(new Date(), activeWindow);
 
-  state.pendingOrders.push({
+  return {
     direction: signal.direction,
     entry: signal.entry,
     sl: signal.sl,
@@ -417,46 +521,82 @@ function addPendingOrder(state, signal) {
     riskPips: signal.riskPips,
     rewardPips: signal.rewardPips,
     reason: signal.reason,
-  });
-  console.log(`  📌 Pending ${signal.direction} stop armed @ ${signal.entry} (expires in ${expiresAfterBars} M5 bars).`);
-  return true;
+    ...extras,
+  };
 }
 
-async function processPendingOrders(pair, state) {
+async function processPendingOrders(pair, state, { source = "poll" } = {}) {
   if (!AUTO_EXECUTE || state.pendingOrders.length === 0) return;
-  const latest = normalizeLiveCandle(state.candleCache.at(-1));
-  const latestTime = state.candleCache.at(-1)?.time;
-  if (!latest) return;
+  if (state.pendingOrdersProcessing) return;
 
-  const kept = [];
-  for (const order of state.pendingOrders) {
-    if (latest.date.getTime() > order.expiresAtMs) {
-      console.log(`  ⌛ Pending ${order.direction} stop expired @ ${order.entry}`);
-      continue;
-    }
-    if (latestTime && order.setupCandleTime && latestTime === order.setupCandleTime) {
-      kept.push(order);
-      continue;
-    }
-    if (state.activeTrades.length >= config.maxTradesPerPair) {
-      kept.push(order);
-      continue;
-    }
-    if (getOpenTradeCount() >= getMaxTotalTrades()) {
-      kept.push(order);
-      continue;
+  state.pendingOrdersProcessing = true;
+  try {
+    const trigger = getPendingTriggerSnapshot(pair, state, source);
+    const latest = trigger?.candle ?? normalizeLiveCandle(state.candleCache.at(-1));
+    const latestTime = state.candleCache.at(-1)?.time;
+
+    const kept = [];
+    for (const order of state.pendingOrders) {
+      const nowMs = order.brokerManaged ? Date.now() : (trigger?.timeMs ?? latest?.date?.getTime() ?? Date.now());
+      if (nowMs > order.expiresAtMs) {
+        const removed = await expirePendingOrder(pair, order);
+        if (!removed) kept.push(order);
+        continue;
+      }
+
+      if (order.brokerManaged) {
+        kept.push(order);
+        continue;
+      }
+
+      if (!trigger && !latest) {
+        kept.push(order);
+        continue;
+      }
+
+      if (source !== "quote" && latestTime && order.setupCandleTime && latestTime === order.setupCandleTime) {
+        kept.push(order);
+        continue;
+      }
+      if (state.activeTrades.length >= config.maxTradesPerPair) {
+        kept.push(order);
+        continue;
+      }
+      if (getOpenTradeCount() >= getMaxTotalTrades()) {
+        kept.push(order);
+        continue;
+      }
+
+      const triggered = isPendingOrderTriggered(order, trigger, latest);
+      if (!triggered) {
+        kept.push(order);
+        continue;
+      }
+
+      const result = await executeOrderSignal(pair, state, order);
+      if (!result.opened && result.keep) kept.push(order);
     }
 
-    const triggered = order.direction === "BUY" ? latest.high >= order.entry : latest.low <= order.entry;
-    if (!triggered) {
-      kept.push(order);
-      continue;
-    }
+    state.pendingOrders = kept;
+  } finally {
+    state.pendingOrdersProcessing = false;
+  }
+}
 
-    await executeOrderSignal(pair, state, order);
+async function expirePendingOrder(pair, order) {
+  if (order.brokerManaged && order.brokerOrderId) {
+    try {
+      await icmarkets.cancelOrder(order.brokerOrderId);
+      console.log(`  ⌛ Broker ${order.direction} stop expired/cancelled @ ${order.entry} (order ${order.brokerOrderId}).`);
+      return true;
+    } catch (err) {
+      console.error(`  ⚠️  Failed to cancel expired broker stop ${order.brokerOrderId} for ${pair}: ${err.message}`);
+      return false;
+    }
   }
 
-  state.pendingOrders = kept;
+  console.log(`  ⌛ Local pending ${order.direction} stop expired @ ${order.entry}`);
+  return true;
 }
 
 async function executeOrderSignal(pair, state, signal) {
@@ -464,11 +604,17 @@ async function executeOrderSignal(pair, state, signal) {
     const gate = riskManager.canTrade();
     if (!gate.allowed) {
       console.log(`  ⛔ Risk gate blocked pending ${signal.direction}: ${gate.reason}`);
-      return;
+      return { opened: false, keep: false };
+    }
+
+    const spreadGate = validateExecutionSpread(pair, state);
+    if (!spreadGate.allowed) {
+      console.log(`  ⛔ Spread gate blocked pending ${signal.direction}: ${spreadGate.reason}`);
+      return { opened: false, keep: true };
     }
 
     const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry);
-    if (units <= 0) return;
+    if (units <= 0) return { opened: false, keep: false };
 
     const res = await icmarkets.openPosition(pair, signal.direction, units, signal.sl, signal.tp, signal.entry);
     if (res && res.positionId) {
@@ -484,10 +630,106 @@ async function executeOrderSignal(pair, state, signal) {
       riskManager.onTradeOpened(String(res.positionId), pair, signal.direction, signal.entry, signal.sl, signal.tp, units);
       saveState();
       console.log(`  ✅ Pending ${signal.direction} triggered and sent as market order.`);
+      return { opened: true, keep: false };
     }
   } catch (err) {
     console.error(`  ❌ Pending order execution failed:`, err.message);
+    return { opened: false, keep: true };
   }
+
+  return { opened: false, keep: true };
+}
+
+function adoptFilledPendingOrder(pair, state, order, positionId, fillPrice = null) {
+  const id = String(positionId);
+  if (state.activeTrades.some(trade => trade.id === id)) return;
+
+  state.activeTrades.push({
+    id,
+    direction: order.direction,
+    pair,
+    entry: Number.isFinite(Number(fillPrice)) && Number(fillPrice) > 0 ? Number(fillPrice) : order.entry,
+    plannedEntry: order.entry,
+    sl: order.sl,
+    tp: order.tp,
+    strategy: order.strategy,
+    sessionKey: order.sessionKey,
+    ageBars: 0,
+    timeExitBars: order.timeExitBars,
+    forceExitUTC: order.forceExitUTC,
+    brokerOrderId: order.brokerOrderId,
+    clientOrderId: order.clientOrderId,
+  });
+
+  state.pendingOrders = state.pendingOrders.filter(pending => {
+    if (order.brokerOrderId && pending.brokerOrderId === order.brokerOrderId) return false;
+    if (order.clientOrderId && pending.clientOrderId === order.clientOrderId) return false;
+    return pending !== order;
+  });
+
+  if (order.sessionKey) {
+    state.sessionTradeCounts.set(order.sessionKey, (state.sessionTradeCounts.get(order.sessionKey) ?? 0) + 1);
+  }
+  riskManager.onTradeOpened(id, pair, order.direction, order.entry, order.sl, order.tp, order.units ?? 0);
+  saveState();
+}
+
+function makeClientOrderId(pair, direction) {
+  const compactPair = String(pair).replace(/[^A-Z0-9]/gi, "").slice(0, 8).toUpperCase();
+  const compactDirection = direction === "BUY" ? "B" : "S";
+  return `kb${Date.now().toString(36)}${compactPair}${compactDirection}`.slice(0, 50);
+}
+
+function getPendingTriggerSnapshot(pair, state, source = "poll") {
+  const quote = getFreshQuote(pair, state);
+  if (quote) {
+    return {
+      source: "quote",
+      bid: quote.bid,
+      ask: quote.ask,
+      spreadPips: quote.spreadPips,
+      timeMs: quote.timeMs,
+      candle: null,
+    };
+  }
+
+  if (source === "quote") return null;
+
+  const candle = normalizeLiveCandle(state.candleCache.at(-1));
+  if (!candle) return null;
+  return { source: "candle", candle, timeMs: candle.date.getTime() };
+}
+
+function isPendingOrderTriggered(order, trigger, latest) {
+  if (trigger?.source === "quote") {
+    return order.direction === "BUY" ? trigger.ask >= order.entry : trigger.bid <= order.entry;
+  }
+
+  if (!latest) return false;
+  return order.direction === "BUY" ? latest.high >= order.entry : latest.low <= order.entry;
+}
+
+function validateExecutionSpread(pair, state) {
+  const quote = getFreshQuote(pair, state);
+  if (!quote) return { allowed: false, reason: `no fresh ${pair} bid/ask quote available` };
+
+  const maxSpreadPips = Number(config.execution?.maxSpreadPips ?? Infinity);
+  if (Number.isFinite(maxSpreadPips) && quote.spreadPips > maxSpreadPips) {
+    return { allowed: false, reason: `spread ${quote.spreadPips.toFixed(1)}p > max ${maxSpreadPips}p` };
+  }
+
+  return { allowed: true, reason: "OK" };
+}
+
+function getFreshQuote(pair, state) {
+  const quote = state?.latestQuote;
+  if (!quote || quote.pair !== pair) return null;
+
+  const maxAgeMs = Number(config.execution?.maxQuoteAgeMs ?? 5_000);
+  if (Number.isFinite(maxAgeMs) && Date.now() - quote.timeMs > maxAgeMs) return null;
+  if (![quote.bid, quote.ask, quote.spreadPips].every(Number.isFinite) || quote.bid <= 0 || quote.ask <= 0 || quote.ask < quote.bid) return null;
+
+  return quote;
 }
 
 async function manageActiveTradeTimeExits(pair, state) {
@@ -550,8 +792,47 @@ function getAsianRangeFromCandles(candles, dateObj, cfg = {}) {
   };
 }
 
+function handleSpotEvent(payload) {
+  const pair = symbolIdToPair.get(String(payload?.symbolId));
+  if (!pair) return;
+
+  const state = getState(pair);
+  const previous = state.latestQuote ?? {};
+  const bid = normalizeSpotPrice(payload.bid) ?? previous.bid;
+  const ask = normalizeSpotPrice(payload.ask) ?? previous.ask;
+  if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0 || ask < bid) return;
+
+  const pipSize = pair.includes("JPY") ? 0.01 : 0.0001;
+  state.latestQuote = {
+    pair,
+    bid,
+    ask,
+    mid: (bid + ask) / 2,
+    spreadPips: (ask - bid) / pipSize,
+    timeMs: Date.now(),
+  };
+
+  if (!AUTO_EXECUTE || state.pendingOrders.length === 0 || !isTradingWindowOpenNow()) return;
+  processPendingOrders(pair, state, { source: "quote" })
+    .catch(err => console.error(`  ❌ ${pair} live pending trigger error:`, err.message));
+}
+
+function normalizeSpotPrice(value) {
+  if (value === undefined || value === null) return null;
+  const price = Number(value);
+  if (!Number.isFinite(price) || price <= 0) return null;
+  return price > 1000 ? price / 100000 : price;
+}
+
+function isTradingWindowOpenNow(now = new Date()) {
+  const day = now.getUTCDay();
+  return day !== 0 && day !== 6 && Boolean(getActiveSessionWindowUTC(now));
+}
+
 function handleExecutionEvent(payload) {
-  if (payload.executionType === "DEAL_FILLED" || payload.executionType === 4) {
+  handleBrokerPendingOrderEvent(payload);
+
+  if (["ORDER_FILLED", "DEAL_FILLED", 3, 4].includes(payload.executionType)) {
     const deal = payload.deal;
     if (deal && deal.closePositionDetail) {
       const positionId = String(deal.positionId);
@@ -584,6 +865,46 @@ function handleExecutionEvent(payload) {
   }
 }
 
+function handleBrokerPendingOrderEvent(payload) {
+  const executionType = payload?.executionType;
+  const order = payload?.order;
+  const orderId = order?.orderId ? String(order.orderId) : null;
+  const clientOrderId = order?.clientOrderId ?? null;
+  if (!orderId && !clientOrderId) return;
+
+  const match = findPendingOrder(orderId, clientOrderId);
+  if (!match) return;
+
+  const { pair, state, pendingOrder } = match;
+  if (executionType === "ORDER_FILLED" || executionType === 3) {
+    const positionId = payload.position?.positionId ?? payload.deal?.positionId;
+    if (!positionId) return;
+    let fillPrice = Number(payload.deal?.executionPrice ?? order.executionPrice ?? payload.position?.price ?? 0);
+    if (fillPrice > 1000) fillPrice = fillPrice / 100000;
+    adoptFilledPendingOrder(pair, state, pendingOrder, String(positionId), fillPrice);
+    console.log(`  ✅ Broker ${pendingOrder.direction} stop filled for ${pair} @ ${Number.isFinite(fillPrice) && fillPrice > 0 ? fillPrice : pendingOrder.entry}.`);
+    return;
+  }
+
+  if (["ORDER_CANCELLED", "ORDER_EXPIRED", "ORDER_REJECTED", 5, 6, 7].includes(executionType)) {
+    state.pendingOrders = state.pendingOrders.filter(order => order !== pendingOrder);
+    saveState();
+    console.log(`  ℹ️  Broker pending ${pendingOrder.direction} stop ${executionType} for ${pair} (order ${pendingOrder.brokerOrderId ?? orderId}).`);
+  }
+}
+
+function findPendingOrder(orderId, clientOrderId) {
+  for (const [pair, state] of pairState) {
+    const pendingOrder = state.pendingOrders.find(order => {
+      if (orderId && order.brokerOrderId && String(order.brokerOrderId) === String(orderId)) return true;
+      if (clientOrderId && order.clientOrderId && order.clientOrderId === clientOrderId) return true;
+      return false;
+    });
+    if (pendingOrder) return { pair, state, pendingOrder };
+  }
+  return null;
+}
+
 function realizedPnlKES(deal) {
   const detail = deal?.closePositionDetail;
   if (!detail) return null;
@@ -600,7 +921,9 @@ function realizedPnlKES(deal) {
 async function reconcileAccount(pair) {
   const state = getState(pair);
   try {
-    const positions = await icmarkets.reconcile();
+    const accountState = await icmarkets.reconcile();
+    const positions = accountState.positions ?? [];
+    const orders = accountState.orders ?? [];
     const symbolId = icmarkets._resolveSymbolId(pair);
     state.activeTrades = positions
       .filter(p => p.tradeData && String(p.tradeData.symbolId) === String(symbolId))
@@ -615,8 +938,33 @@ async function reconcileAccount(pair) {
           brokerReconciled: true,
         };
       });
+    state.pendingOrders = orders
+      .filter(order => order.tradeData && String(order.tradeData.symbolId) === String(symbolId))
+      .filter(order => ["ORDER_STATUS_ACCEPTED", 1].includes(order.orderStatus))
+      .map(order => {
+        const orderId = String(order.orderId);
+        const saved = savedPendingOrdersById.get(orderId) ?? {};
+        return {
+          ...saved,
+          brokerManaged: true,
+          brokerReconciled: true,
+          brokerOrderId: orderId,
+          clientOrderId: saved.clientOrderId ?? order.clientOrderId,
+          direction: saved.direction ?? order.tradeData.tradeSide,
+          pair,
+          entry: saved.entry ?? order.stopPrice,
+          sl: saved.sl ?? order.stopLoss,
+          tp: saved.tp ?? order.takeProfit,
+          units: saved.units ?? Math.floor((Number(order.tradeData.volume) || 0) / 100),
+          expiresAtMs: saved.expiresAtMs ?? Number(order.expirationTimestamp ?? 0),
+        };
+      })
+      .filter(order => order.direction && Number.isFinite(Number(order.entry)) && Number.isFinite(Number(order.expiresAtMs)));
     if (state.activeTrades.length > 0) {
       console.log(`  ✅ Adopted ${state.activeTrades.length} open ${pair} position(s) from broker reconciliation.`);
+    }
+    if (state.pendingOrders.length > 0) {
+      console.log(`  ✅ Adopted ${state.pendingOrders.length} pending ${pair} broker stop order(s) from reconciliation.`);
     }
     riskManager.syncOpenTradeCount(getOpenTradeCount());
     saveState();
@@ -652,8 +1000,12 @@ function hasAvailableTradeSlot() {
 
 function saveState() {
   const allTrades = [];
-  for (const [, state] of pairState) allTrades.push(...state.activeTrades);
-  fs.writeFileSync(STATE_FILE, JSON.stringify({ savedAtUTC: new Date().toISOString(), activeTrades: allTrades }, null, 2));
+  const pendingOrders = [];
+  for (const [, state] of pairState) {
+    allTrades.push(...state.activeTrades);
+    pendingOrders.push(...state.pendingOrders);
+  }
+  fs.writeFileSync(STATE_FILE, JSON.stringify({ savedAtUTC: new Date().toISOString(), activeTrades: allTrades, pendingOrders }, null, 2));
 }
 
 function loadSavedActiveTradesById() {
@@ -666,6 +1018,20 @@ function loadSavedActiveTradesById() {
     return byId;
   } catch (err) {
     console.error(`  ⚠️  Failed to load ${STATE_FILE}: ${err.message}`);
+    return new Map();
+  }
+}
+
+function loadSavedPendingOrdersById() {
+  if (!fs.existsSync(STATE_FILE)) return new Map();
+  try {
+    const data = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    const orders = Array.isArray(data.pendingOrders) ? data.pendingOrders : [];
+    const byId = new Map(orders.filter(order => order?.brokerOrderId).map(order => [String(order.brokerOrderId), order]));
+    if (byId.size > 0) console.log(`  📂 Loaded ${byId.size} saved pending broker order metadata record(s).`);
+    return byId;
+  } catch (err) {
+    console.error(`  ⚠️  Failed to load pending orders from ${STATE_FILE}: ${err.message}`);
     return new Map();
   }
 }
