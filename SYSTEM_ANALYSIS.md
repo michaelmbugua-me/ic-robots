@@ -301,21 +301,17 @@ all_windows:          07:00 – 10:00 UTC (London open) + 12:30 – 16:00 UTC (N
 | File | Role | Called by |
 |---|---|---|
 | `backtest-multi.js` | Multi-pair backtester using history files | `npm run backtest` |
-| `backtest.js` | Single-pair backtester (older, still works) | `npm run backtest-mock` (via description) |
 | `download-history.js` | Downloads historical candles to JSON | `npm run download` |
 | `auth.js` | One-time OAuth2 token flow | `npm run auth` |
 | `get-symbols.js` | Fetch real symbol IDs (JSON protocol, port 5036) | `npm run symbols` |
 | `trade-analyzer.js` | CLI summary of trades_backtest.json | `npm run analyze` |
 | `generate-report.js` | HTML dashboard from trades_backtest.json | `npm run analyze` |
-| `compare-modes.js` | Runs backtest across all session modes | `npm run compare:modes` |
-| `prune-mode-snapshots.js` | Cleans old mode_compare_*.json files | `npm run compare:modes:prune` |
 
 ### DEAD CODE — not imported anywhere in the live pipeline
 
 | File | Why it exists | Current status |
 |---|---|---|
-| `ai.js` | Ollama/Anthropic AI integration | `config.aiMode = "OFF"`. Not imported in `index.js`. Fully unused in live bot and backtests. |
-| `formatter.js` | Terminal output formatting | Not imported in `index.js`. Only useful if AI mode were active. References indicators (RSI7, ATR, EMA8/21/200, VWAP, BBands) that **do not exist** in the current `indicators.js`. |
+| Historical AI/formatter modules | Older docs referenced `ai.js` and `formatter.js`, but those files are not present in the current cleaned codebase. |
 
 ---
 
@@ -477,16 +473,10 @@ index.js
   └── risk-manager.js
         └── config.js
 
-backtest-multi.js / backtest.js
+backtest-multi.js
   ├── indicators.js
+  ├── position-sizing.js
   └── config.js
-
-ai.js (UNUSED in live pipeline)
-  ├── config.js
-  └── @anthropic-ai/sdk (dynamically imported only if provider = "anthropic")
-
-formatter.js (UNUSED)
-  └── (no deps)
 ```
 
 ---
@@ -500,8 +490,7 @@ Based strictly on what was found in the code — no assumptions:
 3. **Fix symbol IDs** — replace hardcoded `{ "EUR_USD": 1 }` with real IDs from get-symbols.js
 4. **Add missing config.maxPositionSizeUnits** — undefined reference in risk-manager.js
 5. **Live spread awareness** — fetch both BID and ASK for signal evaluation, or use mid prices
-6. **Add more indicators to indicators.js** — RSI, ATR are natural first additions that many of the other files (formatter.js, ai.js) already expect
-7. **Activate formatter.js** — replace raw console.log in index.js with formatted output once indicators match
+6. **Add more indicators only if strategy evidence requires them** — keep `indicators.js` focused on currently tested strategy logic.
 8. **Session time verification** — current bot is fixed to UTC; no EAT (UTC+3) awareness in the running code
 
 ---

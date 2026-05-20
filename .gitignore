@@ -1,5 +1,6 @@
 ic-markets/state.json
 state.json
+.DS_Store
 .env
 .env.local
 logs/
@@ -9,4 +10,7 @@ node_modules/
 history_*.json
 risk-state.json
 trades_backtest.json
+trades_backtest_*.json
 report.html
+report_*.html
+mode_compare_*.json

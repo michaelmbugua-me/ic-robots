@@ -1,7 +1,7 @@
 {
   "name": "icmarkets-scalping-bot",
   "version": "1.0.0",
-  "description": "AI forex scalping bot — Local Ollama AI + IC Markets cTrader Open API",
+  "description": "Forex scalping bot — IC Markets cTrader Open API",
   "type": "module",
   "main": "index.js",
   "scripts": {
@@ -18,8 +18,6 @@
     "start:ny-asian": "STRATEGY_MODE=ny_asian_continuation SESSION_WINDOW_MODE=all_windows node index.js",
     "auto:ny-asian": "STRATEGY_MODE=ny_asian_continuation SESSION_WINDOW_MODE=all_windows node index.js --auto-execute",
     "research:regimes": "node market-regime-analysis.js",
-    "backtest-multi-mock": "node backtest-multi.js --mock",
-    "backtest-mock": "node backtest.js --mock",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:stop": "pm2 stop ic-scalping-bot",
     "pm2:restart": "pm2 restart ic-scalping-bot",
