@@ -1,6 +1,6 @@
 /**
  * Trade Performance Analyzer & Dashboard
- * Generates a Daily PnL Calendar from trades_backtest.json (5-10-20 EMA Strategy)
+ * Generates a Daily PnL Calendar from trades_backtest.json (NY Asian Range Continuation Strategy)
  */
 
 import fs from "fs";
@@ -50,13 +50,12 @@ function analyze() {
   const sortedDates = Object.keys(dailyStats).sort();
 
   console.log(`\n═══ 📅 DAILY PERFORMANCE DASHBOARD (${data.type.toUpperCase()}) ═══`);
-  console.log(`  Strategy: 5-10-20 EMA Scalping`);
+  console.log(`  Strategy: ${profile.strategyMode || "unknown"}`);
   if (profile.sessionWindowMode) {
     console.log(
       `  Profile : mode=${profile.sessionWindowMode} | ` +
-      `emaSep=${profile.emaSeparationMinPips ?? 0} | ` +
       `cooldown=${profile.cooldownCandlesAfterLoss ?? 0} | ` +
-      `risk=${profile.minRiskPips ?? "?"}-${profile.maxRiskPips ?? "?"} pips` +
+      `risk=${profile.nyAsianContinuation?.minRiskPips ?? "?"}-${profile.nyAsianContinuation?.maxRiskPips ?? "?"} pips` +
       `${profile.positionSizing?.model ? ` | sizing=${profile.positionSizing.model}` : ""}`
     );
   }

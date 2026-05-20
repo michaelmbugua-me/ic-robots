@@ -1,12 +1,11 @@
 /**
  * RiskManager — Sits between SignalGenerator and TradeExecutor
  *
- * Manages a 50,000 KES capital account:
- *   - Daily stop-loss hard cap: 1,000 KES (2%)
- *   - Daily profit target: 1,000 KES (auto-close & stop)
- *   - Max 1 active trade at any time
- *   - Dynamic lot sizing: Volume = 1000 KES / (SL_Pips × Pip_Value_KES)
- *   - Max leverage: 1:100
+ * Manages the configured KES-denominated risk plan:
+ *   - Daily stop-loss and profit-target gates
+ *   - Max open-trade cap
+ *   - Dynamic lot sizing from account capital, risk %, SL pips, and pip value
+ *   - Max leverage / max position-size caps
  *
  * The TradeExecutor must ALWAYS call riskManager.canTrade() before sending
  * ProtoOANewOrderReq. If it returns false, do NOT trade.
@@ -19,22 +18,26 @@ import { calculateRiskVolume } from "./position-sizing.js";
 const RISK_STATE_FILE = "risk-state.json";
 
 export class RiskManager {
-  constructor() {
+  constructor(runtimeConfig = config, options = {}) {
+    this.config = runtimeConfig ?? config;
+    this.stateFile = options.stateFile ?? RISK_STATE_FILE;
+    this.nowProvider = options.nowProvider ?? (() => new Date());
+
     // KES-denominated risk parameters (from config, with defaults)
-    this.accountCapitalKES    = config.risk.accountCapitalKES;
-    this.riskPerTradePercent  = config.risk.riskPerTradePercent ?? 1;
-    this.enforceDailyStopLoss = config.risk.enforceDailyStopLoss ?? true;
-    this.dailyStopLossKES     = config.risk.dailyStopLossKES;
-    this.dailyProfitTargetKES = config.risk.dailyProfitTargetKES;
-    this.maxLeverage          = config.risk.maxLeverage;
-    this.maxOpenTrades        = config.maxTotalTrades || config.risk.maxOpenTrades || 1;
+    this.accountCapitalKES    = this.config.risk.accountCapitalKES;
+    this.riskPerTradePercent  = this.config.risk.riskPerTradePercent ?? 1;
+    this.enforceDailyStopLoss = this.config.risk.enforceDailyStopLoss ?? true;
+    this.dailyStopLossKES     = this.config.risk.dailyStopLossKES;
+    this.dailyProfitTargetKES = this.config.risk.dailyProfitTargetKES;
+    this.maxLeverage          = this.config.risk.maxLeverage;
+    this.maxOpenTrades        = this.config.maxTotalTrades || this.config.risk.maxOpenTrades || 1;
 
     // Daily tracking (reset each UTC day)
     this.tradingEnabled       = true;
     this.dailyRealizedPnLKES  = 0;
     this.dailyRealizedProfit  = 0;   // Positive PnL accumulator
     this.dailyRealizedLoss    = 0;   // Negative PnL accumulator (stored as positive)
-    this.currentDayUTC        = new Date().getUTCDate();
+    this.currentDayUTC        = this._todayKeyUTC();
     this.openTradeCount       = 0;
     this.tradeLog             = [];   // Intra-day trade results
 
@@ -61,7 +64,7 @@ export class RiskManager {
       return { allowed: false, reason: `Daily stop-loss hit: ${this.dailyRealizedLoss.toFixed(2)} KES lost (limit: ${this.dailyStopLossKES} KES)` };
     }
 
-    // Profit target: daily realized profit >= 1,000 KES → protect gains
+    // Profit target: daily realized profit >= configured target → protect gains
     if (this.dailyRealizedProfit >= this.dailyProfitTargetKES) {
       this.tradingEnabled = false;
       this._saveState();
@@ -89,7 +92,7 @@ export class RiskManager {
    * @param {number} usdKesRate  - USD/KES exchange rate (default from config)
    * @returns {number} units (clamped by max leverage)
    */
-  calculateVolume(pair, slPips, currentRate, usdKesRate = config.risk.usdKesRate) {
+  calculateVolume(pair, slPips, currentRate, usdKesRate = this.config.risk.usdKesRate) {
     return calculateRiskVolume({
       pair,
       slPips,
@@ -98,7 +101,7 @@ export class RiskManager {
       riskPerTradePercent: this.riskPerTradePercent,
       usdKesRate,
       maxLeverage: this.maxLeverage,
-      maxPositionSizeUnits: config.maxPositionSizeUnits,
+      maxPositionSizeUnits: this.config.maxPositionSizeUnits,
       logger: console,
     });
   }
@@ -140,8 +143,6 @@ export class RiskManager {
       trade.closedAt = new Date().toISOString();
     }
 
-    this._saveState();
-
     const emoji = pnlKES >= 0 ? "💰" : "💸";
     console.log(`  ${emoji} RiskManager: Trade closed. PnL: ${pnlKES >= 0 ? "+" : ""}${pnlKES.toFixed(2)} KES | Day total: ${this.dailyRealizedPnLKES.toFixed(2)} KES`);
     console.log(`     Profit: +${this.dailyRealizedProfit.toFixed(2)} KES | Loss: -${this.dailyRealizedLoss.toFixed(2)} KES | Open: ${this.openTradeCount}`);
@@ -155,6 +156,8 @@ export class RiskManager {
       this.tradingEnabled = false;
       console.log(`  🎯 RiskManager: DAILY PROFIT TARGET REACHED. Trading disabled to protect gains.`);
     }
+
+    this._saveState();
   }
 
   /**
@@ -165,25 +168,10 @@ export class RiskManager {
     this._saveState();
   }
 
-  // ─── Status ──────────────────────────────────────────────────────────────────
-
-  getStatus() {
-    this._checkDayReset();
-    return {
-      tradingEnabled:       this.tradingEnabled,
-      dailyRealizedPnLKES:  this.dailyRealizedPnLKES,
-      dailyRealizedProfit:  this.dailyRealizedProfit,
-      dailyRealizedLoss:    this.dailyRealizedLoss,
-      openTradeCount:       this.openTradeCount,
-      remainingLossBudget:  this.dailyStopLossKES - this.dailyRealizedLoss,
-      remainingProfitTarget: this.dailyProfitTargetKES - this.dailyRealizedProfit,
-    };
-  }
-
   // ─── Day Reset ───────────────────────────────────────────────────────────────
 
   _checkDayReset() {
-    const today = new Date().getUTCDate();
+    const today = this._todayKeyUTC();
     if (today !== this.currentDayUTC) {
       console.log(`  🌅 RiskManager: New UTC day — resetting daily counters.`);
       this.currentDayUTC       = today;
@@ -200,7 +188,7 @@ export class RiskManager {
 
   _saveState() {
     try {
-      fs.writeFileSync(RISK_STATE_FILE, JSON.stringify({
+      fs.writeFileSync(this.stateFile, JSON.stringify({
         currentDayUTC:       this.currentDayUTC,
         tradingEnabled:      this.tradingEnabled,
         dailyRealizedPnLKES: this.dailyRealizedPnLKES,
@@ -216,10 +204,11 @@ export class RiskManager {
   }
 
   _loadState() {
-    if (!fs.existsSync(RISK_STATE_FILE)) return;
+    if (!fs.existsSync(this.stateFile)) return;
     try {
-      const data = JSON.parse(fs.readFileSync(RISK_STATE_FILE, "utf8"));
-      if (data.currentDayUTC === new Date().getUTCDate()) {
+      const data = JSON.parse(fs.readFileSync(this.stateFile, "utf8"));
+      const storedDayUTC = this._normalizeStoredDayUTC(data.currentDayUTC);
+      if (storedDayUTC === this._todayKeyUTC()) {
         this.currentDayUTC       = data.currentDayUTC;
         this.tradingEnabled      = data.tradingEnabled;
         this.dailyRealizedPnLKES = data.dailyRealizedPnLKES || 0;
@@ -234,6 +223,19 @@ export class RiskManager {
     } catch (err) {
       console.error("  ⚠️  RiskManager: Failed to load risk-state.json:", err.message);
     }
+  }
+
+  _todayKeyUTC() {
+    return this._formatDayUTC(this.nowProvider());
+  }
+
+  _formatDayUTC(dateLike) {
+    const date = dateLike instanceof Date ? dateLike : new Date(dateLike);
+    return date.toISOString().slice(0, 10);
+  }
+
+  _normalizeStoredDayUTC(value) {
+    return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
   }
 }
 

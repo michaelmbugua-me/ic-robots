@@ -1,5 +1,5 @@
 /**
- * Report Generator — 5-10-20 EMA Scalping Strategy
+ * Report Generator — NY Asian Range Continuation Strategy
  * Converts trade JSON data into a beautiful DARK HTML dashboard (KES Denominated).
  */
 import fs from 'fs';
@@ -12,11 +12,11 @@ const KES_RATE = config.risk.usdKesRate || 129.0;
 
 function buildProfileSummary(profile = {}) {
   const parts = [];
+  if (profile.strategyMode) parts.push(`strategy=${profile.strategyMode}`);
   if (profile.sessionWindowMode) parts.push(`mode=${profile.sessionWindowMode}`);
-  if (profile.emaSeparationMinPips !== undefined) parts.push(`emaSep=${profile.emaSeparationMinPips}`);
   if (profile.cooldownCandlesAfterLoss !== undefined) parts.push(`cooldown=${profile.cooldownCandlesAfterLoss}`);
-  if (profile.minRiskPips !== undefined && profile.maxRiskPips !== undefined) {
-    parts.push(`risk=${profile.minRiskPips}-${profile.maxRiskPips} pips`);
+  if (profile.nyAsianContinuation?.minRiskPips !== undefined && profile.nyAsianContinuation?.maxRiskPips !== undefined) {
+    parts.push(`risk=${profile.nyAsianContinuation.minRiskPips}-${profile.nyAsianContinuation.maxRiskPips} pips`);
   }
   if (profile.positionSizing?.model) parts.push(`sizing=${profile.positionSizing.model}`);
   return parts.join(' | ');

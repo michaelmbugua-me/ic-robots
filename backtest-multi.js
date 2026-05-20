@@ -1,9 +1,9 @@
 /**
- * Backtest Runner — 5-10-20 EMA Scalping Strategy (Multi-Pair)
+ * Backtest Runner — NY Asian Range Continuation Strategy (Multi-Pair)
  */
 
 import fs from "fs";
-import { detectHigherTimeframeTrend, generateNYAsianContinuationSignal, generateNYOpeningRangeBreakoutSignal, generateSignal, generateSessionSweepSignal, generateSmashBuySignal, generateSmashSellSignal } from "./indicators.js";
+import { detectHigherTimeframeTrend, generateNYAsianContinuationSignal } from "./indicators.js";
 import { config } from "./config.js";
 import { calculatePipValueUSD, calculateRiskVolume } from "./position-sizing.js";
 
@@ -17,7 +17,7 @@ let balance = INITIAL_BALANCE;
 const pairData = {};
 const PAIRS = config.tradingPairs;
 const htfConfig = config.strategy.higherTimeframeTrend ?? {};
-const strategyMode = config.strategy.mode || "ema_pullback";
+const strategyMode = config.strategy.mode;
 
 async function main() {
   console.log(`\n${"═".repeat(60)}`);
@@ -49,7 +49,6 @@ async function main() {
         candles,
         higherTimeframeCandles: htfConfig.enabled ? buildHourlyCandles(candles) : [],
         liquidityContext: buildLiquidityContext(candles),
-        openingRangeContext: buildOpeningRangeContext(candles),
         higherTimeframeIndex: 0,
         isJPY: pair.includes("JPY"),
         pipSize: pair.includes("JPY") ? 0.01 : 0.0001,
@@ -155,12 +154,8 @@ async function main() {
       if (getTotalActiveTrades() >= (config.maxTotalTrades ?? Infinity)) continue;
 
       const sessionKey = getSessionKey(dateObj, activeWindow);
-      if (["session_sweep", "ny_orb", "ny_asian_continuation"].includes(strategyMode)) {
-        const strategyCfg = strategyMode === "ny_orb"
-          ? config.strategy.nyOrb
-          : strategyMode === "ny_asian_continuation"
-            ? config.strategy.nyAsianContinuation
-            : config.strategy.sessionSweep;
+      if (strategyMode === "ny_asian_continuation") {
+        const strategyCfg = config.strategy.nyAsianContinuation;
         const allowedSessions = strategyCfg.allowedSessionNames;
         if (Array.isArray(allowedSessions) && allowedSessions.length > 0 && !allowedSessions.includes(activeWindow.name)) continue;
 
@@ -168,27 +163,12 @@ async function main() {
         if ((p.sessionTradeCounts.get(sessionKey) ?? 0) >= maxTradesPerSession) continue;
 
         const h = dateObj.getUTCHours() + (dateObj.getUTCMinutes() / 60);
-        if (strategyMode === "session_sweep") {
-          const noNewTradeMinutes = strategyCfg.noNewTradeMinutesBeforeSessionEnd ?? 0;
-          if (h >= activeWindow.end - (noNewTradeMinutes / 60)) continue;
-        } else if (strategyMode === "ny_asian_continuation") {
-          if (h < strategyCfg.tradeStartUTC || h >= strategyCfg.tradeEndUTC) continue;
-        } else if (Number.isFinite(strategyCfg.noNewTradeAfterUTC) && h >= strategyCfg.noNewTradeAfterUTC) {
-          continue;
-        }
+        if (h < strategyCfg.tradeStartUTC || h >= strategyCfg.tradeEndUTC) continue;
       }
 
       // Signal Generation
-      const liquidityLevels = strategyMode === "session_sweep"
-        ? getLiquidityLevelsForSession(p, dateObj, activeWindow)
-        : [];
-      const openingRange = strategyMode === "ny_orb"
-        ? getOpeningRangeForSession(p, dateObj)
-        : null;
-      const asianRange = strategyMode === "ny_asian_continuation"
-        ? getAsianRangeForSession(p, dateObj)
-        : null;
-      const signal = generateStrategySignal(currentM5Candles, higherTimeframe, p, liquidityLevels, openingRange, asianRange);
+      const asianRange = getAsianRangeForSession(p, dateObj);
+      const signal = generateStrategySignal(currentM5Candles, higherTimeframe, p, asianRange);
 
       if (signal.signal === 'none' || p.activeTrades.length >= config.maxTradesPerPair || p.pendingOrders.length > 0) continue;
 
@@ -197,58 +177,14 @@ async function main() {
     }
   }
 
-  function generateStrategySignal(currentM5Candles, higherTimeframe, p, liquidityLevels = [], openingRange = null, asianRange = null) {
+  function generateStrategySignal(currentM5Candles, higherTimeframe, p, asianRange = null) {
     const htfTrend = htfConfig.enabled ? higherTimeframe.trend : null;
 
-    if (strategyMode === "ny_asian_continuation") {
-      return generateNYAsianContinuationSignal(currentM5Candles, {
-        ...config.strategy.nyAsianContinuation,
-        asianRange,
-        higherTimeframeTrend: htfTrend,
-        isJPY: p.isJPY,
-      });
-    }
-
-    if (strategyMode === "ny_orb") {
-      return generateNYOpeningRangeBreakoutSignal(currentM5Candles, {
-        ...config.strategy.nyOrb,
-        openingRange,
-        higherTimeframeTrend: htfTrend,
-        isJPY: p.isJPY,
-      });
-    }
-
-    if (strategyMode === "session_sweep") {
-      return generateSessionSweepSignal(currentM5Candles, {
-        ...config.strategy.sessionSweep,
-        levels: liquidityLevels,
-        higherTimeframeTrend: htfTrend,
-        isJPY: p.isJPY,
-      });
-    }
-
-    if (strategyMode === "smash_sell") {
-      return generateSmashSellSignal(currentM5Candles, { ...config.strategy.smashSell, higherTimeframeTrend: htfTrend, isJPY: p.isJPY });
-    }
-
-    if (strategyMode === "smash_buy") {
-      return generateSmashBuySignal(currentM5Candles, { ...config.strategy.smashBuy, higherTimeframeTrend: htfTrend, isJPY: p.isJPY });
-    }
-
-    if (strategyMode === "smash") {
-      const sellSignal = generateSmashSellSignal(currentM5Candles, { ...config.strategy.smashSell, higherTimeframeTrend: htfTrend, isJPY: p.isJPY });
-      if (sellSignal.signal !== "none") return sellSignal;
-      return generateSmashBuySignal(currentM5Candles, { ...config.strategy.smashBuy, higherTimeframeTrend: htfTrend, isJPY: p.isJPY });
-    }
-
-    return generateSignal(currentM5Candles, {
-      pipBuffer: config.strategy.pipBuffer,
-      rrRatio:   config.strategy.rrRatio,
-      minRiskPips: config.strategy.minRiskPips,
-      maxRiskPips: config.strategy.maxRiskPips,
-      emaSeparationMinPips: config.strategy.emaSeparationMinPips,
+    return generateNYAsianContinuationSignal(currentM5Candles, {
+      ...config.strategy.nyAsianContinuation,
+      asianRange,
       higherTimeframeTrend: htfTrend,
-      isJPY:     p.isJPY,
+      isJPY: p.isJPY,
     });
   }
 
@@ -272,8 +208,8 @@ async function main() {
         units,
         setupTime: signal.setupTime,
         setupIndex,
-        expiresAfterBars: signal.pendingExpiryBars ?? config.strategy.smashSell.pendingExpiryBars,
-        timeExitBars: signal.timeExitBars ?? config.strategy.smashSell.timeExitBars,
+        expiresAfterBars: signal.pendingExpiryBars ?? 3,
+        timeExitBars: signal.timeExitBars,
         forceExitUTC: signal.forceExitUTC,
         sessionKey,
         strategy: signal.strategy,
@@ -283,8 +219,6 @@ async function main() {
         reason: signal.reason,
         riskPips: signal.riskPips,
         rewardPips: signal.rewardPips,
-        atrPips: signal.atrPips,
-        smashAtrRatio: signal.smashAtrRatio,
       });
       return;
     }
@@ -298,8 +232,8 @@ async function main() {
         units,
         setupTime: signal.setupTime,
         setupIndex,
-        expiresAfterBars: signal.pendingExpiryBars ?? config.strategy.smashBuy.pendingExpiryBars,
-        timeExitBars: signal.timeExitBars ?? config.strategy.smashBuy.timeExitBars,
+        expiresAfterBars: signal.pendingExpiryBars ?? 3,
+        timeExitBars: signal.timeExitBars,
         forceExitUTC: signal.forceExitUTC,
         sessionKey,
         strategy: signal.strategy,
@@ -309,8 +243,6 @@ async function main() {
         reason: signal.reason,
         riskPips: signal.riskPips,
         rewardPips: signal.rewardPips,
-        atrPips: signal.atrPips,
-        smashAtrRatio: signal.smashAtrRatio,
       });
       return;
     }
@@ -364,8 +296,6 @@ async function main() {
           forceExitUTC: order.forceExitUTC,
           riskPips: order.riskPips,
           rewardPips: order.rewardPips,
-          atrPips: order.atrPips,
-          smashAtrRatio: order.smashAtrRatio,
         });
         return false;
       }
@@ -397,8 +327,6 @@ async function main() {
           forceExitUTC: order.forceExitUTC,
           riskPips: order.riskPips,
           rewardPips: order.rewardPips,
-          atrPips: order.atrPips,
-          smashAtrRatio: order.smashAtrRatio,
         });
         return false;
       }
@@ -545,21 +473,14 @@ async function main() {
         dailyStopLossKES: config.risk.dailyStopLossKES,
         dailyProfitTargetKES: config.risk.dailyProfitTargetKES,
       },
-      emaSeparationMinPips: config.strategy.emaSeparationMinPips,
       cooldownCandlesAfterLoss: config.strategy.cooldownCandlesAfterLoss,
-      minRiskPips: config.strategy.minRiskPips,
-      maxRiskPips: config.strategy.maxRiskPips,
       riskPerTradePercent: config.risk.riskPerTradePercent,
       higherTimeframeTrend: htfConfig.enabled ? {
         granularity: htfConfig.granularity || config.higherTimeframe,
         emaPeriod: htfConfig.emaPeriod,
         requireSlope: htfConfig.requireSlope,
       } : null,
-      smashSell: ["smash_sell", "smash"].includes(strategyMode) ? config.strategy.smashSell : null,
-      smashBuy: ["smash_buy", "smash"].includes(strategyMode) ? config.strategy.smashBuy : null,
-      sessionSweep: strategyMode === "session_sweep" ? config.strategy.sessionSweep : null,
-      nyOrb: strategyMode === "ny_orb" ? config.strategy.nyOrb : null,
-      nyAsianContinuation: strategyMode === "ny_asian_continuation" ? config.strategy.nyAsianContinuation : null,
+      nyAsianContinuation: config.strategy.nyAsianContinuation,
     },
     trades: allHistory,
     byPair,
@@ -661,7 +582,6 @@ function buildHourlyCandles(candles) {
 }
 
 function buildLiquidityContext(candles) {
-  const dailyRanges = new Map();
   const asianRanges = new Map();
   const asianCfg = config.strategy.nyAsianContinuation ?? {};
   const asianStart = asianCfg.asianStartUTC ?? 0;
@@ -677,43 +597,11 @@ function buildLiquidityContext(candles) {
     const low = parseFloat(mid.l);
     if (!Number.isFinite(high) || !Number.isFinite(low)) continue;
 
-    updateRange(dailyRanges, key, high, low);
-
     const h = date.getUTCHours() + (date.getUTCMinutes() / 60);
     if (h >= asianStart && h < asianEnd) updateRange(asianRanges, key, high, low);
   }
 
-  const sortedDays = Array.from(dailyRanges.keys()).sort();
-  const previousDayRanges = new Map();
-  for (let i = 1; i < sortedDays.length; i++) {
-    previousDayRanges.set(sortedDays[i], dailyRanges.get(sortedDays[i - 1]));
-  }
-
-  return { dailyRanges, asianRanges, previousDayRanges };
-}
-
-function buildOpeningRangeContext(candles) {
-  const ranges = new Map();
-  const cfg = config.strategy.nyOrb ?? {};
-  const start = cfg.openingRangeStartUTC ?? 12.5;
-  const end = cfg.openingRangeEndUTC ?? 13.0;
-
-  for (const candle of candles) {
-    const mid = candle.mid;
-    if (!mid) continue;
-
-    const date = new Date(candle.time);
-    const h = date.getUTCHours() + (date.getUTCMinutes() / 60);
-    if (h < start || h >= end) continue;
-
-    const key = dayKeyUTC(date);
-    const high = parseFloat(mid.h);
-    const low = parseFloat(mid.l);
-    if (!Number.isFinite(high) || !Number.isFinite(low)) continue;
-    updateRange(ranges, key, high, low);
-  }
-
-  return { ranges, start, end };
+  return { asianRanges };
 }
 
 function updateRange(map, key, high, low) {
@@ -726,40 +614,6 @@ function updateRange(map, key, high, low) {
   range.low = Math.min(range.low, low);
 }
 
-function getLiquidityLevelsForSession(pairState, dateObj, activeWindow) {
-  const cfg = config.strategy.sessionSweep;
-  const key = dayKeyUTC(dateObj);
-  const levels = [];
-  const name = activeWindow?.name ?? "";
-
-  const asian = pairState.liquidityContext.asianRanges.get(key);
-  if (cfg.useAsianLevels && asian && (name === "london_open" || name === "ny_overlap" || name === "legacy")) {
-    levels.push({ name: "asian_high", side: "high", price: asian.high, priority: name === "london_open" ? 3 : 2 });
-    levels.push({ name: "asian_low", side: "low", price: asian.low, priority: name === "london_open" ? 3 : 2 });
-  }
-
-  const previousDay = pairState.liquidityContext.previousDayRanges.get(key);
-  if (cfg.usePreviousDayLevels && previousDay && (name === "ny_overlap" || name === "legacy")) {
-    levels.push({ name: "previous_day_high", side: "high", price: previousDay.high, priority: 3 });
-    levels.push({ name: "previous_day_low", side: "low", price: previousDay.low, priority: 3 });
-  }
-
-  return levels;
-}
-
-function getOpeningRangeForSession(pairState, dateObj) {
-  const key = dayKeyUTC(dateObj);
-  const range = pairState.openingRangeContext.ranges.get(key);
-  if (!range) return null;
-
-  return {
-    name: "ny_opening_range",
-    high: range.high,
-    low: range.low,
-    start: pairState.openingRangeContext.start,
-    end: pairState.openingRangeContext.end,
-  };
-}
 
 function getAsianRangeForSession(pairState, dateObj) {
   const key = dayKeyUTC(dateObj);

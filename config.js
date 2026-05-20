@@ -45,6 +45,11 @@ const sessionWindowPresetsUTC = {
 
 const sessionWindowMode = process.env.SESSION_WINDOW_MODE || "all_windows";
 const selectedSessionWindowsUTC = sessionWindowPresetsUTC[sessionWindowMode] || sessionWindowPresetsUTC.ny_only;
+const supportedStrategyModes = ["ny_asian_continuation"];
+const strategyMode = process.env.STRATEGY_MODE || "ny_asian_continuation";
+if (!supportedStrategyModes.includes(strategyMode)) {
+  throw new Error(`Unsupported STRATEGY_MODE="${strategyMode}". Supported modes: ${supportedStrategyModes.join(", ")}`);
+}
 
 export const config = {
 
@@ -98,7 +103,7 @@ export const config = {
     accountCapitalKES:    250_000,
     riskPerTradePercent:  envNumber("RISK_PER_TRADE_PERCENT", 1),
     enforceDailyStopLoss: envBool("ENFORCE_DAILY_STOP_LOSS", true),
-    dailyStopLossKES:     envNumber("DAILY_STOP_LOSS_KES", 300),
+    dailyStopLossKES:     envNumber("DAILY_STOP_LOSS_KES", 3000),
     dailyProfitTargetKES: envNumber("DAILY_PROFIT_TARGET_KES", 5000),
     maxLeverage:          100,
     usdKesRate:           129.0,
@@ -111,15 +116,10 @@ export const config = {
   maxSlippagePips: envNumber("MAX_SLIPPAGE_PIPS", 0.5),
 
   strategy: {
-    mode: process.env.STRATEGY_MODE || "ny_asian_continuation",
+    mode: strategyMode,
+    supportedModes: supportedStrategyModes,
 
-    // 5-10-20 EMA Scalping
-    pipBuffer: 0.00005,  // 0.5-pip buffer beyond trigger candle edge for SL
-    rrRatio:   1.5,      // Reward-to-risk ratio for TP calculation
-    minRiskPips: envNumber("MIN_RISK_PIPS", 2),
-    maxRiskPips: envNumber("MAX_RISK_PIPS", 15),
     cooldownCandlesAfterLoss: envNumber("COOLDOWN_CANDLES_AFTER_LOSS", 1),
-    emaSeparationMinPips: envNumber("EMA_SEPARATION_MIN_PIPS", 0),
     higherTimeframeTrend: {
       enabled: true,
       granularity: "H1",

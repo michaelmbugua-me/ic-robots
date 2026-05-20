@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
 /**
- * 5-10-20 EMA Scalping Strategy
- * M5 Execution on EURUSD — IC Markets cTrader
+ * NY Asian Range Continuation Strategy
+ * M5 Execution on IC Markets cTrader
  */
 
 import fs from "fs";
 import { ICMarketsClient } from "./icmarkets.js";
 import { config } from "./config.js";
-import { detectHigherTimeframeTrend, generateNYAsianContinuationSignal, generateSignal } from "./indicators.js";
+import { detectHigherTimeframeTrend, generateNYAsianContinuationSignal } from "./indicators.js";
 import { RiskManager } from "./risk-manager.js";
 
 const STATE_FILE = "state.json";
@@ -29,8 +29,9 @@ const GRANULARITY_MS = {
 };
 
 const icmarkets = new ICMarketsClient();
-const riskManager = new RiskManager(config);
+const riskManager = new RiskManager();
 const pairState = new Map();
+const savedActiveTradesById = loadSavedActiveTradesById();
 
 function getState(pair) {
   if (!pairState.has(pair)) {
@@ -105,9 +106,7 @@ async function tickPair(pair, timestamp) {
   const isJPY = pair.includes("JPY");
 
   // 1. Refresh candles only when a new closed candle can exist.
-  const candleCount = config.strategy.mode === "ny_asian_continuation"
-    ? (config.strategy.nyAsianContinuation?.lookbackCandles ?? 220)
-    : 100;
+  const candleCount = config.strategy.nyAsianContinuation?.lookbackCandles ?? 220;
   if (shouldRefreshClosedCandles(state.candleCache, config.granularity, now, state.lastEntryCandleFetchAt)) {
     state.lastEntryCandleFetchAt = now;
     try {
@@ -250,31 +249,19 @@ function generateStrategySignal(state, higherTimeframe, activeWindow, isJPY) {
   const htfConfig = config.strategy.higherTimeframeTrend ?? {};
   const htfTrend = htfConfig.enabled ? higherTimeframe.trend : null;
 
-  if (config.strategy.mode === "ny_asian_continuation") {
-    const cfg = config.strategy.nyAsianContinuation ?? {};
-    if (Array.isArray(cfg.allowedSessionNames) && cfg.allowedSessionNames.length > 0 && !cfg.allowedSessionNames.includes(activeWindow?.name)) {
-      return noSignal(`NY Asian continuation blocked outside allowed session (${activeWindow?.name ?? "none"})`);
-    }
-
-    const sessionKey = getSessionKey(new Date(), activeWindow);
-    if ((state.sessionTradeCounts.get(sessionKey) ?? 0) >= (cfg.maxTradesPerSession ?? 1)) {
-      return noSignal(`NY Asian continuation max trades reached for ${sessionKey}`);
-    }
-
-    return generateNYAsianContinuationSignal(state.candleCache, {
-      ...cfg,
-      asianRange: getAsianRangeFromCandles(state.candleCache, new Date(), cfg),
-      higherTimeframeTrend: htfTrend,
-      isJPY,
-    });
+  const cfg = config.strategy.nyAsianContinuation ?? {};
+  if (Array.isArray(cfg.allowedSessionNames) && cfg.allowedSessionNames.length > 0 && !cfg.allowedSessionNames.includes(activeWindow?.name)) {
+    return noSignal(`NY Asian continuation blocked outside allowed session (${activeWindow?.name ?? "none"})`);
   }
 
-  return generateSignal(state.candleCache, {
-    pipBuffer: config.strategy.pipBuffer,
-    rrRatio:   config.strategy.rrRatio,
-    minRiskPips: config.strategy.minRiskPips,
-    maxRiskPips: config.strategy.maxRiskPips,
-    emaSeparationMinPips: config.strategy.emaSeparationMinPips,
+  const sessionKey = getSessionKey(new Date(), activeWindow);
+  if ((state.sessionTradeCounts.get(sessionKey) ?? 0) >= (cfg.maxTradesPerSession ?? 1)) {
+    return noSignal(`NY Asian continuation max trades reached for ${sessionKey}`);
+  }
+
+  return generateNYAsianContinuationSignal(state.candleCache, {
+    ...cfg,
+    asianRange: getAsianRangeFromCandles(state.candleCache, new Date(), cfg),
     higherTimeframeTrend: htfTrend,
     isJPY,
   });
@@ -617,10 +604,25 @@ async function reconcileAccount(pair) {
     const symbolId = icmarkets._resolveSymbolId(pair);
     state.activeTrades = positions
       .filter(p => p.tradeData && String(p.tradeData.symbolId) === String(symbolId))
-      .map(p => ({ id: String(p.positionId), direction: p.tradeData.tradeSide, pair }));
+      .map(p => {
+        const id = String(p.positionId);
+        const saved = savedActiveTradesById.get(id) ?? {};
+        return {
+          ...saved,
+          id,
+          direction: saved.direction ?? p.tradeData.tradeSide,
+          pair,
+          brokerReconciled: true,
+        };
+      });
+    if (state.activeTrades.length > 0) {
+      console.log(`  ✅ Adopted ${state.activeTrades.length} open ${pair} position(s) from broker reconciliation.`);
+    }
     riskManager.syncOpenTradeCount(getOpenTradeCount());
     saveState();
-  } catch (err) {}
+  } catch (err) {
+    console.error(`  ⚠️  ${pair} reconciliation failed: ${err.message}`);
+  }
 }
 
 function getOpenTradeCount() {
@@ -651,7 +653,21 @@ function hasAvailableTradeSlot() {
 function saveState() {
   const allTrades = [];
   for (const [, state] of pairState) allTrades.push(...state.activeTrades);
-  fs.writeFileSync(STATE_FILE, JSON.stringify({ activeTrades: allTrades }, null, 2));
+  fs.writeFileSync(STATE_FILE, JSON.stringify({ savedAtUTC: new Date().toISOString(), activeTrades: allTrades }, null, 2));
+}
+
+function loadSavedActiveTradesById() {
+  if (!fs.existsSync(STATE_FILE)) return new Map();
+  try {
+    const data = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    const trades = Array.isArray(data.activeTrades) ? data.activeTrades : [];
+    const byId = new Map(trades.filter(t => t?.id).map(t => [String(t.id), t]));
+    if (byId.size > 0) console.log(`  📂 Loaded ${byId.size} saved active trade metadata record(s).`);
+    return byId;
+  } catch (err) {
+    console.error(`  ⚠️  Failed to load ${STATE_FILE}: ${err.message}`);
+    return new Map();
+  }
 }
 
 function getSessionKey(dateObj, activeWindow) {

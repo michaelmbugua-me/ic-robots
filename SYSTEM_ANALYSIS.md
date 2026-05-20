@@ -5,9 +5,7 @@
 
 ## 1. WHAT THIS SYSTEM ACTUALLY IS
 
-Despite the AGENTS.md describing a sophisticated multi-phase AI-driven system with RSI, ATR, ADX, VWAP, Bollinger Bands, MACD, and AI signal generation — **none of that exists in the live trading pipeline**.
-
-The system that actually runs when you execute `npm run start` or `npm run auto` is a **simple 3-condition EMA pullback strategy** on a single pair (EUR_USD) on M5 candles. Nothing more.
+The live trading pipeline is a rule-based **NY Asian range continuation** bot. It uses closed M5 candles for entries, optional H1 EMA trend alignment for directional context, shared KES-denominated risk sizing, pending stop entries, and cTrader execution.
 
 ---
 
@@ -33,17 +31,17 @@ startup
            Configurable via SESSION_WINDOW_MODE env var
 
 2. CANDLE REFRESH
-   └── icmarkets.getCandles(pair, "M5", 100)
+   └── icmarkets.getCandles(pair, "M5", nyAsianContinuation.lookbackCandles)
        └── Fetches 100 M5 candles from cTrader via ProtoOAGetTrendbarsReq
        └── Returns { time, complete, volume, mid: { o, h, l, c } }
        └── If fetch fails but cache exists → continue with cached candles
-       └── Minimum 22 candles required, otherwise skip
+       └── Minimum 20 candles required by the NY Asian continuation signal
 
 3. COOLDOWN CHECK
    └── If cooldownCandlesRemaining > 0 → skip (counts down each new candle)
        └── Triggered after a stop-loss hit (cooldownCandlesAfterLoss = 1 candle default)
 
-4. SIGNAL GENERATION — generateSignal() from indicators.js
+4. SIGNAL GENERATION — generateNYAsianContinuationSignal() from indicators.js
    └── See Section 3 below
 
 5. TRADE GATE
@@ -51,9 +49,10 @@ startup
    └── If signal === 'none' → skip
 
 6. EXECUTION (only if --auto-execute flag is set)
-   └── riskManager.calculateVolume(pair, riskPips, entry) — compute lot size
+   └── Pending stop setup: arm locally, then trigger when live price reaches entry
+   └── Market execution: riskManager.canTrade() + calculateVolume()
    └── icmarkets.openPosition(pair, action, units, sl, tp, entry)
-   └── On success: push to activeTrades[], saveState()
+   └── On success: push to activeTrades[], record risk state, saveState()
 ```
 
 ### Execution events (async, not in the poll loop):
@@ -71,69 +70,51 @@ icmarkets.on(2126, handleExecutionEvent)
 ## 3. SIGNAL GENERATION — THE ONLY STRATEGY IN USE
 
 **File:** `indicators.js`  
-**Function:** `generateSignal(candles, opts)`
+**Function:** `generateNYAsianContinuationSignal(candles, opts)`
 
-### Indicators calculated (ALL that exist):
+### Required context:
 
-| Indicator | Periods | Used for |
+| Context | Source | Used for |
 |---|---|---|
-| EMA | 5 | Fast trend line |
-| EMA | 10 | Trigger line (pullback + trigger detection) |
-| EMA | 20 | Slow trend line |
+| Asian range | `index.js` / `backtest-multi.js` session helpers | Breakout level high/low |
+| H1 EMA trend | `detectHigherTimeframeTrend()` | Optional directional alignment |
+| M5 candle stream | cTrader / history files | First NY break confirmation |
 
-### The 4 conditions that must ALL pass for a signal:
-
-```
-Condition 1 — EMA TREND ALIGNMENT (detectTrend)
-  BUY:  EMA5 > EMA10 > EMA20 (all stacked bullish)
-  SELL: EMA5 < EMA10 < EMA20 (all stacked bearish)
-  ELSE: 'neutral' → NO SIGNAL
-
-Condition 2 — OPTIONAL EMA SEPARATION FILTER
-  |EMA5 - EMA20| / pipSize >= emaSeparationMinPips
-  Default: 0 (disabled). Set via EMA_SEPARATION_MIN_PIPS env var.
-  ny_quality mode sets this to 0.5 pips.
-
-Condition 3 — PULLBACK ON PREVIOUS CANDLE (hasPullback)
-  BUY:  prevCandle.low  <= prevEMA10  OR  prevCandle.low  <= prevEMA20
-  SELL: prevCandle.high >= prevEMA10  OR  prevCandle.high >= prevEMA20
-
-Condition 4 — EARLY TRIGGER ON CURRENT CANDLE (hasEarlyTrigger)
-  BUY:  prevClose <= EMA10  AND  currentClose > EMA10  (crosses back above)
-  SELL: prevClose >= EMA10  AND  currentClose < EMA10  (crosses back below)
-```
-
-### Trade parameter calculation (calcTradeParams):
+### The conditions that must pass for a signal:
 
 ```
-Entry   = currentClose
-SL      = triggerCandle.low  - pipBuffer  (BUY)
-          triggerCandle.high + pipBuffer  (SELL)
-          pipBuffer = 0.00005 (0.5 pip buffer)
-Risk    = |entry - SL|
-TP      = entry + (risk × rrRatio)  (BUY)
-          entry - (risk × rrRatio)  (SELL)
-          rrRatio = 1.5
-
-Risk filters:
-  riskPips < 2 pips  → NO SIGNAL (minRiskPips)
-  riskPips > 15 pips → NO SIGNAL (maxRiskPips)
+1. Asian range is valid and complete.
+2. Current time is inside the NY Asian continuation trade window.
+3. If enabled, H1 trend is bull for BUY or bear for SELL.
+4. No earlier clean NY break of the Asian high/low occurred this session.
+5. Current closed M5 candle makes a clean one-sided break of Asian high or low.
+6. Stop-risk is within NY_ASIAN_MIN_RISK_PIPS and NY_ASIAN_MAX_RISK_PIPS.
 ```
 
-### What `generateSignal()` returns:
+### Trade parameter calculation:
+
+```
+BUY entry  = asianHigh + entryBufferPips
+BUY SL     = breakoutCandle.low - stopBufferPips
+BUY TP     = entry + (risk × NY_ASIAN_RR_RATIO)
+
+SELL entry = asianLow - entryBufferPips
+SELL SL    = breakoutCandle.high + stopBufferPips
+SELL TP    = entry - (risk × NY_ASIAN_RR_RATIO)
+```
+
+### What `generateNYAsianContinuationSignal()` returns:
 
 ```js
 {
-  signal:     'buy' | 'sell' | 'none',
-  trend:      'bull' | 'bear' | 'neutral',
-  entry:      number,   // currentClose, 5dp
+  signal:     'buy_stop' | 'sell_stop' | 'none',
+  direction:  'BUY' | 'SELL' | null,
+  entry:      number,   // pending stop entry, 5dp
   sl:         number,   // absolute price, 5dp
   tp:         number,   // absolute price, 5dp
   riskPips:   number,
   rewardPips: number,
-  ema5:       number,
-  ema10:      number,
-  ema20:      number,
+  levelName:  'asian_high' | 'asian_low',
   reason:     string    // human-readable explanation
 }
 ```
@@ -272,7 +253,7 @@ _resolveSymbolId(instrument)
 ### Session windows (UTC):
 ```
 ny_only    (default): 12:30 – 16:00 UTC
-ny_quality:           12:30 – 16:00 UTC  (+ EMA separation ≥ 0.5 pips)
+ny_quality:           12:30 – 16:00 UTC
 ny_trimmed:           12:45 – 15:45 UTC
 all_windows:          07:00 – 10:00 UTC (London open) + 12:30 – 16:00 UTC (NY overlap)
 ```
@@ -292,7 +273,7 @@ all_windows:          07:00 – 10:00 UTC (London open) + 12:30 – 16:00 UTC (N
 |---|---|---|
 | `index.js` | Entry point, main loop | `npm run start / auto` |
 | `icmarkets.js` | WebSocket client, order execution, candle data | `index.js` |
-| `indicators.js` | EMA 5/10/20 signal generator | `index.js`, backtests |
+| `indicators.js` | NY Asian continuation signal generator + H1 EMA trend helper | `index.js`, backtests |
 | `config.js` | All configuration | every file |
 | `risk-manager.js` | Volume/lot calculation (partially wired) | `index.js` |
 
@@ -368,9 +349,9 @@ The AGENTS.md describes a significantly more advanced version of the system. Her
 **Location:** `icmarkets.js` — `getCandles(..., quoteType = 1)`  
 **Effect:** The bot evaluates signals and places entries based on bid prices. For SELL orders, entry should ideally be on the ASK. In backtesting, spread is simulated (+/- SPREAD_PIPS/2). In live trading, this discrepancy is unhandled — the slippage protection is the only guard.
 
-### Bug 6: `riskManager.validateRiskReward()` takes `signal.stopLoss` / `signal.takeProfit`
+### Bug 6: `riskManager.validateRiskReward()` takes legacy `signal.stopLoss` / `signal.takeProfit`
 **Location:** `risk-manager.js` line 146  
-**Effect:** The method uses `signal.stopLoss` and `signal.takeProfit` as property names, but `generateSignal()` returns `signal.sl` and `signal.tp`. The method would always return `false` if called. It is not called anywhere in the live bot.
+**Effect:** The method uses `signal.stopLoss` and `signal.takeProfit` as property names, while current signals use `signal.sl` and `signal.tp`. The method would always return `false` if called. It is not called anywhere in the live bot.
 
 ---
 
@@ -385,7 +366,7 @@ The AGENTS.md describes a significantly more advanced version of the system. Her
    a. Check if weekend → skip
    b. Check session window via isTradeWindowUTC() → skip if outside
    c. Check cooldown → skip if active
-   d. Run generateSignal() on last 100 candles
+   d. Build Asian range context and run generateNYAsianContinuationSignal() on recent candles
    e. If signal and slot available → open trade
    f. On next candles, check if SL or TP hit (using bid/ask simulation)
 5. Output: trades_backtest.json
@@ -443,12 +424,10 @@ risk.minRiskReward: 1.5
 maxTotalTrades: 1
 maxTradesPerPair: 1
 
-strategy.pipBuffer: 0.00005
-strategy.rrRatio: 1.5
-strategy.minRiskPips: 2         → override with MIN_RISK_PIPS env
-strategy.maxRiskPips: 15        → override with MAX_RISK_PIPS env
 strategy.cooldownCandlesAfterLoss: 1  → override with COOLDOWN_CANDLES_AFTER_LOSS env
-strategy.emaSeparationMinPips: 0      → override with EMA_SEPARATION_MIN_PIPS env
+strategy.nyAsianContinuation.minRiskPips: 5   → override with NY_ASIAN_MIN_RISK_PIPS env
+strategy.nyAsianContinuation.maxRiskPips: 10  → override with NY_ASIAN_MAX_RISK_PIPS env
+strategy.nyAsianContinuation.rrRatio: 1.2     → override with NY_ASIAN_RR_RATIO env
 
 backtest.spreadPips: 0.2
 backtest.slippagePips: 0.3
