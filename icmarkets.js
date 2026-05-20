@@ -137,6 +137,7 @@ export class ICMarketsClient {
     this.lastNonTradeRequestAt = 0;
     this.nonTradeRequestTimestamps = [];
     this.rateLimitBackoffUntil = 0;
+    this.staleConnectionRecoveryStarted = false;
   }
 
   // ─── Connection ────────────────────────────────────────────────────────────
@@ -174,6 +175,7 @@ export class ICMarketsClient {
         settled = true;
         clearTimeout(connectTimeout);
         this.connected = true;
+        this.staleConnectionRecoveryStarted = false;
         this.lastMessageTime = Date.now();
         this._startHeartbeat();
         this._startHealthMonitor();
@@ -184,6 +186,10 @@ export class ICMarketsClient {
       this.ws.on("message", (raw) => {
         this.lastMessageTime = Date.now();
         this._onMessage(raw);
+      });
+
+      this.ws.on("pong", () => {
+        this.lastMessageTime = Date.now();
       });
 
       this.ws.on("error", (err) => {
@@ -873,7 +879,7 @@ export class ICMarketsClient {
   _startHeartbeat() {
     this.heartbeatTimer = setInterval(() => {
       if (this.connected) {
-        this._send(PT.HEARTBEAT, {}).catch(() => {});
+        this._send(PT.HEARTBEAT, {}, { expectEvent: true }).catch(() => {});
       }
     }, 20_000);
   }
@@ -883,7 +889,7 @@ export class ICMarketsClient {
    * GCP drops idle TCP connections after ~10 minutes; this keeps them alive.
    */
   _startKeepalive() {
-    const KEEPALIVE_MS = 4 * 60 * 1000; // every 4 minutes
+    const KEEPALIVE_MS = 20_000;
     this.keepaliveTimer = setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.ping?.();
@@ -903,6 +909,11 @@ export class ICMarketsClient {
         logConnectionAlert(msg);
         if (this.onConnectionLost) {
           this.onConnectionLost(msg);
+        }
+        if (!this.staleConnectionRecoveryStarted) {
+          this.staleConnectionRecoveryStarted = true;
+          console.error("⚠️  cTrader socket appears stale — forcing reconnect.");
+          try { this.ws?.terminate(); } catch {}
         }
       }
     }, 5_000); // Check every 5s

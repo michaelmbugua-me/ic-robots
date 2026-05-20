@@ -175,15 +175,15 @@ async function tickPair(pair, timestamp) {
 
   // 2. Generate signal
   const activeWindow = getActiveSessionWindowUTC(new Date());
-  const signal = generateStrategySignal(state, higherTimeframe, activeWindow, isJPY);
+  const signal = normalizeSignal(generateStrategySignal(state, higherTimeframe, activeWindow, isJPY));
 
   // Log status every minute
   if (now - (state.lastLogTime || 0) > 60000) {
     console.log(
-      `[${timestamp}] ${pair} | Trend: ${signal.trend.toUpperCase()} | ` +
-      `HTF: ${higherTimeframe.trend.toUpperCase()} | ` +
+      `[${timestamp}] ${pair} | Trend: ${upper(signal.trend, "neutral")} | ` +
+      `HTF: ${upper(higherTimeframe.trend, "neutral")} | ` +
       `Strategy: ${config.strategy.mode} | Pending: ${state.pendingOrders.length} | ` +
-      `Signal: ${signal.signal.toUpperCase()}`
+      `Signal: ${upper(signal.signal, "none")}`
     );
     if (signal.signal !== 'none') console.log(`  → ${signal.reason}`);
     state.lastLogTime = now;
@@ -282,6 +282,36 @@ function generateStrategySignal(state, higherTimeframe, activeWindow, isJPY) {
 
 function noSignal(reason) {
   return { signal: "none", trend: "neutral", entry: null, sl: null, tp: null, riskPips: null, rewardPips: null, reason };
+}
+
+function normalizeSignal(signal) {
+  const src = signal && typeof signal === "object" ? signal : {};
+  const signalName = typeof src.signal === "string" && src.signal ? src.signal : "none";
+  const direction = typeof src.direction === "string" ? src.direction.toUpperCase() : null;
+  const trend = typeof src.trend === "string" && src.trend
+    ? src.trend
+    : direction === "BUY"
+      ? "bull"
+      : direction === "SELL"
+        ? "bear"
+        : "neutral";
+
+  return {
+    signal: signalName,
+    trend,
+    direction,
+    entry: null,
+    sl: null,
+    tp: null,
+    riskPips: null,
+    rewardPips: null,
+    reason: "Signal generator returned no actionable setup",
+    ...src
+  };
+}
+
+function upper(value, fallback = "unknown") {
+  return String(value ?? fallback).toUpperCase();
 }
 
 async function getLiveMidCandles(pair, granularity, count) {

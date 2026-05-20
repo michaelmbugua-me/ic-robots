@@ -1,4 +1,4 @@
-name: Deploy to GCP VM
+name: Deploy to VM
 
 on:
   push:
@@ -18,8 +18,8 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           port: ${{ secrets.VM_PORT }}
           script: |
-            mkdir -p /home/kelvinmbugua/ic-robots
-            cd /home/kelvinmbugua/ic-robots
+            mkdir -p "$HOME/ic-robots"
+            cd "$HOME/ic-robots"
             
             # If directory exists but is not a git repo, clean it
             if [ -d "ic-markets" ] && [ ! -d "ic-markets/.git" ]; then

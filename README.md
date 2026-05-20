@@ -259,12 +259,9 @@ no cooldown and a 2-candle cooldown in the current backtests.
 - Scalping is high-risk — most retail traders lose money.
 - This bot is experimental and provided for educational purposes.
 
-Trade start
-12:30
-3:30 PM
-Trade end
-15:30
-6:30 PM
-Force exit all
-16:00
-7:00 PM
+## Trading Time:
+| SessionWindow | Time                           |
+|---------------|--------------------------------|
+| London open   | 10:00–13:00 EAT                | 
+| NY overlap    | 15:30–19:00 EAT                |
+---
