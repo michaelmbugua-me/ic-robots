@@ -1,233 +1,670 @@
-# Forex Scalping Bot — IC Markets Edition
-Rule-based forex scalping bot using IC Markets cTrader Open API
+# IC Markets cTrader Scalping Bot
+
+Rule-based forex scalping bot for IC Markets via the cTrader Open API. The current implementation runs one active strategy, `ny_asian_continuation`, on M5 candles with H1 EMA trend context, KES-denominated risk controls, optional live auto-execution, historical backtesting, and HTML reporting.
+
+> **Risk notice:** This is experimental trading software. Start in `demo`, run in monitor-only mode first, and do not deploy with real funds unless you understand the strategy, execution risks, API behavior, and all configuration values.
 
 ---
 
-## ⚙️ How it Works
+## What this project contains
 
-The bot operates as a **semi-autonomous polling system** that combines multi-timeframe technical filters, position sizing, and cTrader execution.
+| Area | Files |
+|---|---|
+| Live bot loop | `index.js` |
+| cTrader Open API client | `icmarkets.js`, `OpenApi*.proto` |
+| Strategy and indicators | `indicators.js` |
+| Runtime configuration | `config.js` |
+| Risk and position sizing | `risk-manager.js`, `position-sizing.js` |
+| OAuth token helper | `auth.js` |
+| Symbol lookup helper | `get-symbols.js` |
+| Historical data download | `download-history.js` |
+| Backtesting | `backtest-multi.js`, `history_*.json` |
+| Analysis and reporting | `trade-analyzer.js`, `generate-report.js`, `report-metrics.js` |
+| Process/deployment | `ecosystem.config.cjs`, `Dockerfile` |
+| Tests | `tests/` |
+| Runtime state | `state.json`, `risk-state.json`, `activity.log`, `logs/` |
 
-### Architecture Overview
+Runtime/generated files such as `.env`, `state.json`, `risk-state.json`, `history_*.json`, `trades_backtest.json`, `report.html`, logs, and `node_modules/` are ignored by git.
+
+---
+
+## Runtime architecture
 
 ```mermaid
 graph TD
-    A[Poll Loop] --> B[Fetch M5 Candles]
-    A --> C[Fetch H1 Candles]
-    B --> D[Build Session Context]
-    C --> E[Detect H1 EMA Trend]
-    D --> F{Session + Risk Filters}
-    E --> F
-    F -- Fail --> G[Wait / Skip]
-    F -- Pass --> H{Strategy Signal}
-    H -- No Setup --> G
-    H -- Stop Setup --> I[Arm Pending Stop]
-    H -- Market Setup --> J[Risk Gate]
-    I --> J
-    J -- Blocked --> G
-    J -- Allowed --> K[Execute via cTrader]
-    K --> L[Track Active Trade]
-    L --> M[SL / TP / Time Exit]
+    A[Start index.js] --> B[Load config.js and .env]
+    B --> C[Connect cTrader WebSocket]
+    C --> D[Authenticate app + account]
+    D --> E[Resolve symbols and reconcile broker positions/orders]
+    E --> F[Subscribe to live ticks]
+    F --> G[Poll every 10 seconds]
+    G --> H{Weekend or outside configured UTC session?}
+    H -- yes --> I[Sleep / skip]
+    H -- no --> J[Refresh closed M5 entry candles]
+    J --> K[Refresh closed H1 candles]
+    K --> L[Detect H1 EMA200 trend]
+    L --> M[Build today's Asian range]
+    M --> N[Generate NY Asian continuation setup]
+    N --> O{No signal?}
+    O -- yes --> I
+    O -- stop setup --> P{Auto execute enabled?}
+    P -- no --> Q[Print monitor signal only]
+    P -- yes --> R[Risk gate + spread gate]
+    R --> S[Place broker stop order or local pending stop]
+    S --> T[Track pending/active trade in state.json]
+    T --> U[Execution events update RiskManager]
 ```
 
-1. **Multi-timeframe data (`index.js`, `icmarkets.js`)**:
-   The live bot fetches closed **M5** candles for entries and **H1** candles for higher-timeframe context.
+### Live mode behavior
 
-2. **Current primary strategy (`indicators.js`)**:
-   The default mode is `ny_asian_continuation`, which looks for the first clean New York break of the Asian range with optional H1 trend alignment.
+`index.js` is the main process.
 
-3. **Risk management (`risk-manager.js`, `position-sizing.js`)**:
-   Position size is calculated from configured account capital, risk percentage, SL distance, pip value, leverage cap, and max position size.
+1. Loads environment variables through `config.js` using `dotenv/config`.
+2. Creates an `ICMarketsClient` and a `RiskManager`.
+3. Connects to cTrader:
+   - `demo.ctraderapi.com:5035` when `CTRADER_ENV=demo` or unset.
+   - `live.ctraderapi.com:5035` when `CTRADER_ENV=live`.
+4. Authenticates with:
+   - `CTRADER_CLIENT_ID`
+   - `CTRADER_CLIENT_SECRET`
+   - `CTRADER_ACCESS_TOKEN`
+   - `CTRADER_ACCOUNT_ID`
+5. For every configured pair in `TRADING_PAIRS`, it:
+   - fetches/validates broker symbol details where possible,
+   - reconciles existing broker positions and pending orders,
+   - subscribes to live tick events.
+6. Starts a 10-second poll loop.
+7. During configured session windows, it refreshes closed M5 and H1 candles, runs the strategy, and either logs signals or executes them depending on `--auto-execute`.
 
-4. **Execution and persistence**:
-   The bot sends cTrader market orders, reconciles existing positions on startup, writes active trade state to `state.json`, and tracks daily risk state in `risk-state.json`.
+### Monitor-only vs auto-execute
 
----
-
-## 🚀 Roadmap: Areas for Improvement
-
-Based on our recent backtests and live execution analysis, here are the primary points we can improve:
-
-### 1. Execution Speed & Latency
-- **Optimized Indicators**: Currently, we recalculate all indicators on every tick. Moving to a more efficient sliding-window approach or using a dedicated library like `technicalindicators` for performance.
-- **Broker/API Latency**: Order placement and candle refreshes depend on cTrader API response times. Rate-limit handling and request batching remain important optimization areas.
-
-### 2. Advanced Market Context
-- **News and macro filters**: Add optional high-impact news/calendar guards before automation.
-- **Correlated Pairs**: Monitoring `DXY` (Dollar Index) or `GBPUSD` to detect broader USD strength/weakness, which often precedes `EURUSD` movement.
-
-### 3. Backtest Realism
-- **Slippage Simulation**: Current backtests assume perfect execution. Adding `0.2 - 0.5 pip` slippage would make the results more conservative and realistic.
-- **Variable Spread**: Simulating spread widening during news releases or session rollovers to test the bot's resilience during high-volatility periods.
-
-### 4. Scalability & Monitoring
-- **Broader Pair Coverage**: The current loop already supports multiple configured pairs; the next step is validating which pairs improve portfolio-level expectancy.
-- **Web Dashboard**: A real-time web UI (e.g., using Next.js or a simple dashboard) to monitor active trades, P&L, risk state, and strategy reasons without tailing log files.
-
-### 5. Data Persistence & Analytics
-- **Database Migration**: Moving `history_*.json` and trade logs to a database (e.g., SQLite or PostgreSQL) for faster querying and better long-term performance tracking.
-- **Post-Trade Analysis**: Automatically tagging trades with strategy reason and outcome to identify which market conditions the bot excels in.
+| Mode | Command | Places orders? | Use case |
+|---|---|---:|---|
+| Monitor only | `npm start` | No | Safest first run. Connects, authenticates, subscribes, prints status/signals. |
+| Auto execute | `npm run auto` | Yes | Places broker/local orders when all strategy, risk, and spread gates pass. |
+| NY Asian monitor profile | `npm run start:ny-asian` | No | Same strategy with explicit environment overrides. |
+| NY Asian auto profile | `npm run auto:ny-asian` | Yes | PM2/Docker-style live execution profile. |
 
 ---
 
-## Full Setup Guide (do these in order)
+## Current strategy: `ny_asian_continuation`
 
-### Step 1 — Create a cTrader ID
-1. Go to **https://id.ctrader.com** and sign up
-2. This is separate from your IC Markets login — it's Spotware's universal ID
+The only supported strategy mode in `config.js` is:
 
-### Step 2 — Link IC Markets to your cTrader ID
-1. Go to **https://ct.icmarkets.com** (IC Markets cTrader web platform)
-2. Log in using your cTrader ID
-3. Your IC Markets trading account should appear automatically
-4. Note your **account number** (top-left dropdown, 8–9 digits)
+```bash
+STRATEGY_MODE=ny_asian_continuation
+```
 
-### Step 3 — Register an Open API Application
-1. Go to **https://openapi.ctrader.com**
-2. Log in with your cTrader ID
-3. Click **Add new app**
-4. Fill in a name (e.g. "Scalping Bot") and description
-5. Submit — approval usually takes a few minutes
-6. Once approved, click **Credentials** and copy:
-   - **Client ID**
-   - **Client Secret**
+Strategy implementation lives in `indicators.js` and is called by both `index.js` and `backtest-multi.js`.
 
-### Step 4 — Install dependencies
+### Strategy logic
+
+1. Build the Asian range from M5 candles between `NY_ASIAN_START_UTC` and `NY_ASIAN_END_UTC`.
+   - Defaults: `00:00–07:00 UTC`.
+2. Trade only during the NY continuation window.
+   - Defaults: `12:30–15:30 UTC`.
+   - The current preferred-time filter waits until `13:00 UTC` by default.
+3. Require the first clean NY break of the Asian high or low.
+   - Default minimum break: `3.0` pips.
+4. Optionally require H1 alignment.
+   - Default: enabled.
+   - BUY requires H1 `bull`; SELL requires H1 `bear`.
+5. H1 trend is detected using closed H1 candles:
+   - close above rising EMA200 = `bull`,
+   - close below falling EMA200 = `bear`,
+   - otherwise `neutral`.
+6. Generate a stop-entry setup:
+   - `buy_stop` above Asian high, or
+   - `sell_stop` below Asian low.
+7. Validate stop distance.
+   - Default min risk: `5` pips.
+   - Default max risk: `12` pips in `config.js`.
+   - PM2 overrides this to `10` pips in `ecosystem.config.cjs`.
+8. Set reward using `NY_ASIAN_RR_RATIO`.
+   - Default: `1.2R`.
+9. Expire pending entries after `NY_ASIAN_PENDING_EXPIRY_BARS` M5 bars.
+   - Default: `3` bars.
+10. Close active trades by:
+    - broker SL/TP,
+    - time exit after `NY_ASIAN_TIME_EXIT_BARS`, default `12`, or
+    - force exit after `NY_ASIAN_FORCE_EXIT_UTC`, default `16:00 UTC`.
+
+---
+
+## Session windows
+
+Session windows are configured in `config.js` using `SESSION_WINDOW_MODE`.
+
+| Mode | UTC windows | Notes |
+|---|---|---|
+| `ny_only` | `12:30–16:00` | NY overlap only. |
+| `ny_quality` | `12:30–16:00` | Same window, alternate profile name for testing. |
+| `ny_trimmed` | `12:45–15:45` | Slightly narrower NY window. |
+| `london_only` | `07:00–10:00` | London open only. Current strategy is still configured to allow NY by default, so update `NY_ASIAN_ALLOWED_SESSIONS` if testing this. |
+| `all_windows` | `07:00–10:00`, `12:30–16:00` | Default in `config.js`; strategy defaults still allow `ny_overlap` only. |
+
+Important distinction:
+
+- `SESSION_WINDOW_MODE` controls when the bot wakes up and evaluates pairs.
+- `NY_ASIAN_ALLOWED_SESSIONS` controls whether the strategy is allowed to trade in a named active window.
+- By default, `NY_ASIAN_ALLOWED_SESSIONS=ny_overlap`, so London evaluations do not become London trades unless you explicitly change that strategy setting.
+
+---
+
+## Risk model and execution guards
+
+Risk is managed by `risk-manager.js` and `position-sizing.js`.
+
+### Defaults from `config.js`
+
+| Setting | Default | Meaning |
+|---|---:|---|
+| `accountCapitalKES` | `250000` | Sizing reference capital in KES. |
+| `RISK_PER_TRADE_PERCENT` | `0.5` | Risk percent per trade. |
+| `ENFORCE_DAILY_STOP_LOSS` | `true` | Disable trading after daily realized loss threshold. |
+| `DAILY_STOP_LOSS_KES` | `3000` | Daily realized loss gate. |
+| `DAILY_PROFIT_TARGET_KES` | `5000` | Daily realized profit gate. |
+| `maxLeverage` | `100` | Position sizing cap. |
+| `usdKesRate` | `129.0` | Conversion rate used for KES sizing/reporting. |
+| `MAX_TOTAL_TRADES` | `3` | Account-level active + pending slot cap. |
+| `MAX_TRADES_PER_PAIR` | `1` | Pair-level active trade cap. |
+| `maxPositionSizeUnits` | `100000` | Absolute unit cap. |
+| `MAX_SLIPPAGE_PIPS` | `0.5` | cTrader market-order slippage setting. |
+| `MAX_SPREAD_PIPS` | `1.5` | Live spread gate before execution. |
+| `MAX_QUOTE_AGE_MS` | `5000` | Live quote freshness requirement. |
+
+Position sizing formula:
+
+```text
+risk amount KES = accountCapitalKES × riskPerTradePercent / 100
+units = risk amount KES / (stop loss pips × pip value per unit in KES)
+```
+
+Then units are capped by leverage and `maxPositionSizeUnits`.
+
+### Runtime state files
+
+| File | Written by | Purpose |
+|---|---|---|
+| `state.json` | `index.js` | Active trades and pending orders, so restarts can reconcile/adopt existing broker state. |
+| `risk-state.json` | `risk-manager.js` | Daily realized P&L, daily risk gates, open trade count, intra-day trade log. |
+| `activity.log` | `icmarkets.js` | Connection health alerts. |
+| `logs/out.log`, `logs/err.log` | PM2 | PM2 stdout/stderr when using `ecosystem.config.cjs`. |
+
+`risk-state.json` resets daily counters when the UTC day changes.
+
+---
+
+## Prerequisites
+
+- Node.js 20+ recommended. The Docker image uses `node:20-slim`.
+- npm or pnpm.
+- IC Markets cTrader account linked to a cTrader ID.
+- cTrader Open API application credentials.
+- A cTrader Open API access token.
+
+Install dependencies:
+
 ```bash
 npm install
 ```
 
-### Step 5 — Set environment variables
-Create a `.env` file:
+or, if you prefer the existing lockfile workflow:
+
+```bash
+pnpm install --frozen-lockfile
 ```
-# IC Markets Credentials
+
+---
+
+## Environment setup
+
+Create `.env` from `.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+Required values:
+
+```bash
 CTRADER_CLIENT_ID=your-client-id
 CTRADER_CLIENT_SECRET=your-client-secret
-CTRADER_ACCOUNT_ID=your-ic-markets-account-number
-```
-
-### Step 6 — Get your Access Token (one-time)
-```bash
-node auth.js
-```
-- A URL is printed → open it in your browser
-- Log in with your cTrader ID and click Allow
-- The token is printed in your terminal
-- Add it to your `.env`:
-```
+CTRADER_ACCOUNT_ID=your-ctrader-account-id
 CTRADER_ACCESS_TOKEN=your-access-token
+CTRADER_ENV=demo
 ```
 
-### Step 7 — Get your Symbol IDs
+Recommended defaults for first runs:
+
 ```bash
-node get-symbols.js
+CTRADER_ENV=demo
+TRADING_PAIRS=EUR_USD,GBP_USD,USD_JPY
+SESSION_WINDOW_MODE=all_windows
+STRATEGY_MODE=ny_asian_continuation
+RISK_PER_TRADE_PERCENT=0.5
 ```
-- Prints the correct symbol IDs for your IC Markets account
-- Copy the output block into `config.js` → `ctraderSymbolIds`
 
-### Step 8 — Download historical data for backtests
+Never commit `.env`; it is ignored by `.gitignore`.
+
+---
+
+## cTrader setup flow
+
+### 1. Create and link your cTrader ID
+
+1. Create/login to a cTrader ID at `https://id.ctrader.com`.
+2. Log in to IC Markets cTrader web at `https://ct.icmarkets.com`.
+3. Confirm your trading account is visible.
+4. Note your cTrader account ID/account number for `CTRADER_ACCOUNT_ID`.
+
+### 2. Register a cTrader Open API app
+
+1. Go to `https://openapi.ctrader.com`.
+2. Add a new application.
+3. Use this redirect URI because `auth.js` listens locally on port `3000`:
+
+```text
+http://localhost:3000/callback
+```
+
+4. Copy the client ID and client secret into `.env`.
+
+### 3. Generate an access token
+
+Run:
+
+```bash
+npm run auth
+```
+
+What happens:
+
+1. `auth.js` prints an authorization URL.
+2. Open it in your browser.
+3. Approve access.
+4. Browser redirects to `http://localhost:3000/callback`.
+5. The script exchanges the code for tokens.
+6. Copy the printed value into `.env`:
+
+```bash
+CTRADER_ACCESS_TOKEN=printed-access-token
+```
+
+The script also prints `CTRADER_REFRESH_TOKEN`; the current bot reads `CTRADER_ACCESS_TOKEN` only, so re-run `npm run auth` when the access token expires.
+
+### 4. Confirm symbol IDs
+
+Run:
+
+```bash
+npm run symbols
+```
+
+Copy the printed `ctraderSymbolIds` block into `config.js` if your broker account returns IDs that differ from the current defaults.
+
+---
+
+## Running the bot
+
+### Monitor-only first
+
+```bash
+npm start
+```
+
+This connects to cTrader, authenticates, reconciles account state, subscribes to ticks, and logs strategy status. It does not place trades.
+
+### Auto-execute
+
+```bash
+npm run auto
+```
+
+Equivalent direct command:
+
+```bash
+STRATEGY_MODE=ny_asian_continuation SESSION_WINDOW_MODE=all_windows node index.js --auto-execute
+```
+
+Auto-execute can place broker stop orders or market orders when the strategy, risk, session, quote, and spread gates pass.
+
+### Useful live overrides
+
+```bash
+TRADING_PAIRS=EUR_USD npm start
+```
+
+```bash
+MAX_TOTAL_TRADES=1 MAX_TRADES_PER_PAIR=1 npm run auto
+```
+
+```bash
+MAX_SPREAD_PIPS=1.0 MAX_QUOTE_AGE_MS=3000 npm run auto
+```
+
+```bash
+NY_ASIAN_REQUIRE_H1_ALIGNMENT=false npm run backtest:ny-asian
+```
+
+---
+
+## Historical data and backtesting
+
+Historical files are named:
+
+```text
+history_<PAIR>.json
+```
+
+Examples:
+
+```text
+history_EUR_USD.json
+history_GBP_USD.json
+history_USD_JPY.json
+```
+
+### Download history
+
+Default download uses configured `TRADING_PAIRS`, M5 granularity, and 30 days:
+
 ```bash
 npm run download
 ```
 
-For a longer EUR/USD dataset:
+Download specific pairs/days:
+
+```bash
+node download-history.js --pair EUR_USD,GBP_USD --days 180 --resume --chunk-size 2500
+```
+
+Long EUR/USD helper:
+
 ```bash
 npm run download:eurusd:3y
 ```
 
-### Step 9 — Run the bot
+### Run a backtest
+
 ```bash
-# Monitor only — signals printed, no trades placed (START HERE)
-npm start
+npm run backtest
+```
 
-# Auto-execute using current configured trading pairs and strategy
-npm run auto
+NY Asian profile:
 
-# Current primary strategy profile
-npm run start:ny-asian
-npm run auto:ny-asian
-
-# Backtest current strategy
+```bash
 npm run backtest:ny-asian
+```
 
-# Analyze latest backtest and regenerate report.html
+Multi-pair NY Asian profile:
+
+```bash
+npm run backtest:ny-asian:multi
+```
+
+The backtester:
+
+- loads local `history_*.json` files,
+- builds H1 candles from M5 data for EMA200 filtering,
+- simulates spread and slippage using `BACKTEST_SPREAD_PIPS` and `BACKTEST_SLIPPAGE_PIPS`,
+- applies KES daily risk gates,
+- writes `trades_backtest.json`.
+
+Default simulation costs:
+
+```bash
+BACKTEST_SPREAD_PIPS=0.7
+BACKTEST_SLIPPAGE_PIPS=0.3
+```
+
+### Analyze and generate HTML report
+
+```bash
 npm run analyze
 ```
 
+This runs:
+
+```bash
+node trade-analyzer.js && node generate-report.js
+```
+
+Outputs:
+
+- terminal daily performance and robustness summaries,
+- `report.html` dashboard.
+
+Open the generated report in your browser:
+
+```bash
+open report.html
+```
+
 ---
 
-## 📊 Safety & Performance Features
+## Market-regime research helper
 
-| Feature | Benefit |
-|---|---|
-| **Session Filters** | Only evaluates trades during configured London/NY UTC windows. |
-| **Hard HTF Filter** | Requires H1 trend alignment when enabled. |
-| **Single-Trade Focus** | Defaults to one total trade and one trade per pair. |
-| **Slippage Guard** | Sends cTrader slippage protection using `MAX_SLIPPAGE_PIPS`. |
-| **Reconciliation** | Bot automatically "finds" and manages trades after a restart. |
-| **Dynamic Pip Value** | Professional risk calculation (1% risk) across any symbol. |
+`market-regime-analysis.js` reads a local history file and prints exploratory regime/session statistics.
+
+Example:
+
+```bash
+npm run research:regimes -- --pair EUR_USD --file history_EUR_USD.json --cost-pips 0.7
+```
 
 ---
 
-## Session Hours (when the bot trades)
+## PM2 operation
 
-| Session | UTC Hours | Quality |
+`ecosystem.config.cjs` runs one forked process named `ic-scalping-bot` with `--auto-execute` and production-oriented strategy/risk environment overrides.
+
+Start:
+
+```bash
+npm run pm2:start
+```
+
+Status/logs:
+
+```bash
+npm run pm2:status
+npm run pm2:logs
+```
+
+Restart/stop/delete:
+
+```bash
+npm run pm2:restart
+npm run pm2:stop
+npm run pm2:delete
+```
+
+PM2 writes logs to:
+
+```text
+logs/out.log
+logs/err.log
+```
+
+Before PM2 auto-execution, verify `.env` is present in the working directory and run monitor-only mode successfully.
+
+---
+
+## Docker operation
+
+The `Dockerfile` uses Node 20, installs pnpm, installs dependencies from `pnpm-lock.yaml`, copies the project, and defaults to monitor mode:
+
+```bash
+docker build -t icmarkets-scalping-bot .
+```
+
+Monitor mode:
+
+```bash
+docker run --rm --env-file .env icmarkets-scalping-bot
+```
+
+Auto-execute:
+
+```bash
+docker run --rm --env-file .env icmarkets-scalping-bot node index.js --auto-execute
+```
+
+If you want state files to persist outside the container, mount the project or a writable data directory and make sure `state.json` and `risk-state.json` are preserved between restarts.
+
+---
+
+## Configuration reference
+
+Most values are configured in `config.js`; many can be overridden with environment variables.
+
+### Core credentials
+
+| Variable | Required | Default | Used by |
+|---|---:|---|---|
+| `CTRADER_CLIENT_ID` | Yes | empty | `auth.js`, `icmarkets.js`, `get-symbols.js` |
+| `CTRADER_CLIENT_SECRET` | Yes | empty | `auth.js`, `icmarkets.js` |
+| `CTRADER_ACCESS_TOKEN` | Yes for API calls | empty | `icmarkets.js`, `get-symbols.js` |
+| `CTRADER_ACCOUNT_ID` | Yes for API calls | `0` | `icmarkets.js`, `get-symbols.js` |
+| `CTRADER_ENV` | No | `demo` | Selects demo/live host |
+
+### Strategy/session
+
+| Variable | Default | Notes |
 |---|---|---|
-| Default mode (`ny_only`) | 12:30–16:00 | ⭐ Best quality so far |
-| Quality mode (`ny_quality`) | 12:30–16:00 | 🧪 Same NY window, named profile for A/B testing |
-| Experimental (`ny_trimmed`) | 12:45–15:45 | 🧪 Slight edge trim for A/B testing |
-| Alt mode (`all_windows`) | 07:00–10:00 + 12:30–16:00 | ✅ Higher trade count |
-| Off hours | all other UTC times | ⚠️ Skipped |
+| `TRADING_PAIRS` | `EUR_USD,GBP_USD,USD_JPY` | Comma-separated pair list. Must have symbol IDs in `config.ctraderSymbolIds`. |
+| `STRATEGY_MODE` | `ny_asian_continuation` | Only supported mode. |
+| `SESSION_WINDOW_MODE` | `all_windows` | One of `ny_only`, `ny_quality`, `ny_trimmed`, `london_only`, `all_windows`. |
+| `NY_ASIAN_ALLOWED_SESSIONS` | `ny_overlap` | Comma-separated session names allowed by the strategy. |
+| `NY_ASIAN_START_UTC` | `0` | Asian range start. |
+| `NY_ASIAN_END_UTC` | `7` | Asian range end. |
+| `NY_ASIAN_TRADE_START_UTC` | `12.5` | Strategy trade window start. |
+| `NY_ASIAN_TRADE_END_UTC` | `15.5` | Strategy trade window end. |
+| `NY_ASIAN_PREFER_AFTER_UTC` | `13.0` | Blocks setups before this time. |
+| `NY_ASIAN_FORCE_EXIT_UTC` | `16.0` | Force-close time. |
+| `NY_ASIAN_REQUIRE_H1_ALIGNMENT` | `true` | Requires H1 trend alignment. |
+| `NY_ASIAN_ENTRY_BUFFER_PIPS` | `0.5` | Stop entry buffer. |
+| `NY_ASIAN_STOP_BUFFER_PIPS` | `0.5` | Stop loss buffer. |
+| `NY_ASIAN_MIN_BREAK_PIPS` | `3.0` | Minimum clean break beyond Asian range. |
+| `NY_ASIAN_MIN_RISK_PIPS` | `5` | Minimum stop distance. |
+| `NY_ASIAN_MAX_RISK_PIPS` | `12` | Maximum stop distance. |
+| `NY_ASIAN_RR_RATIO` | `1.2` | Reward/risk ratio. |
+| `NY_ASIAN_PENDING_EXPIRY_BARS` | `3` | Pending stop expiry in M5 bars. |
+| `NY_ASIAN_TIME_EXIT_BARS` | `12` | Trade time exit in bars. |
+| `NY_ASIAN_MAX_TRADES_PER_SESSION` | `1` | Per-pair/per-session setup count. |
+| `NY_ASIAN_LOOKBACK_CANDLES` | `220` | M5 lookback for live strategy context. |
+| `COOLDOWN_CANDLES_AFTER_LOSS` | `1` | Per-pair cooldown after SL. |
 
-Set mode with environment variable:
-```bash
-SESSION_WINDOW_MODE=ny_only npm run backtest
-SESSION_WINDOW_MODE=ny_quality npm run backtest
-SESSION_WINDOW_MODE=ny_trimmed npm run backtest
-SESSION_WINDOW_MODE=all_windows npm run backtest
-```
+### Execution and API throttling
 
-Fine-tune risk-band filters:
-```bash
-NY_ASIAN_MIN_RISK_PIPS=5 NY_ASIAN_MAX_RISK_PIPS=10 npm run backtest:ny-asian
-```
+| Variable | Default | Notes |
+|---|---:|---|
+| `USE_BROKER_STOP_ORDERS` | `true` | Places cTrader STOP orders for stop-entry setups. |
+| `FALLBACK_TO_LOCAL_STOPS` | `false` | If broker stop placement fails, optionally simulate stop triggers locally. |
+| `MAX_SPREAD_PIPS` | `1.5` | Live spread gate. |
+| `MAX_QUOTE_AGE_MS` | `5000` | Reject stale quote snapshots. |
+| `MAX_SLIPPAGE_PIPS` | `0.5` | cTrader market-order slippage value. |
+| `DEBUG_ORDER_PAYLOAD` | `false` | Prints raw order payloads. |
+| `CTRADER_NON_TRADE_MIN_INTERVAL_MS` | `750` | Throttles non-trade requests. |
+| `CTRADER_MAX_NON_TRADE_REQUESTS_PER_MINUTE` | `40` | Non-trade request cap. |
+| `CTRADER_RATE_LIMIT_BACKOFF_MS` | `30000` | Backoff after cTrader rate-limit errors. |
 
-Current defaults keep NY Asian continuation setups between 5 and 10 pips of stop risk
-to skip both noisy tiny stops and wider-stop setups that tend to block cleaner follow-up trades.
+### Backtest
 
-Post-loss cooldown (default: 1 candle):
-```bash
-COOLDOWN_CANDLES_AFTER_LOSS=1 npm run backtest:ny-asian
-COOLDOWN_CANDLES_AFTER_LOSS=0 npm run backtest:ny-asian
-```
-
-Current default is a 1-candle cooldown after an `SL`, which tested better than both
-no cooldown and a 2-candle cooldown in the current backtests.
+| Variable | Default | Notes |
+|---|---:|---|
+| `BACKTEST_SPREAD_PIPS` | `0.7` | Simulated spread. |
+| `BACKTEST_SLIPPAGE_PIPS` | `0.3` | Simulated slippage. |
 
 ---
 
-## File Overview
+## Tests and validation
 
-| File | Purpose |
-|---|---|
-| `index.js` | Main loop — signal + execution |
-| `icmarkets.js` | cTrader WebSocket API client |
-| `indicators.js` | NY Asian continuation signal logic and H1 EMA trend helper |
-| `config.js` | Risk, session, strategy, and cTrader settings |
-| `state.json` | Persistent storage for active trades |
-| `risk-state.json` | Persistent storage for daily risk limits |
+Run the local test suite:
+
+```bash
+npm test
+```
+
+Current tests check:
+
+- risk-state loading/reset behavior,
+- daily stop-loss behavior,
+- package scripts point to existing files,
+- stale removed strategy names do not reappear,
+- key config defaults remain as expected.
 
 ---
 
-## ⚠️ Risk Warnings
-- Always start on a **Demo** account for at least 48 hours.
-- Default risk: **1% per trade** — do not increase.
-- Token expires every ~30 days — re-run `node auth.js`.
-- Scalping is high-risk — most retail traders lose money.
-- This bot is experimental and provided for educational purposes.
+## Common troubleshooting
 
-## Trading Time:
-| SessionWindow | Time                           |
-|---------------|--------------------------------|
-| London open   | 10:00–13:00 EAT                | 
-| NY overlap    | 15:30–19:00 EAT                |
+### `Missing credentials`
+
+Your `.env` is missing one or more required cTrader values. Confirm:
+
+```bash
+grep '^CTRADER_' .env
+```
+
+Do not paste secrets into logs or issues.
+
+### `No symbol ID found`
+
+Run:
+
+```bash
+npm run symbols
+```
+
+Then update `config.js` → `ctraderSymbolIds`.
+
+### `No trendbar data`
+
+Possible causes:
+
+- market closed,
+- invalid symbol ID,
+- token/account mismatch,
+- cTrader data unavailable for that range,
+- rate limiting.
+
+Try one pair first:
+
+```bash
+TRADING_PAIRS=EUR_USD npm start
+```
+
+### `WebSocket not open` or stale connection warnings
+
+`icmarkets.js` has heartbeat, ping keepalive, health monitoring, and reconnect logic. If repeated reconnects happen, check network stability, credentials, cTrader environment, and whether the API is rate-limiting requests.
+
+### Bot is running but not trading
+
+Check the log reason. Common valid blockers:
+
+- outside UTC session windows,
+- weekend,
+- no valid Asian range yet,
+- before preferred NY time,
+- H1 trend neutral or opposite direction,
+- risk too small/large,
+- max trades reached,
+- daily stop/profit gate hit,
+- no fresh quote,
+- spread above `MAX_SPREAD_PIPS`.
+
 ---
+
+## Safe operating checklist
+
+Before using `--auto-execute`:
+
+- [ ] `.env` uses `CTRADER_ENV=demo`.
+- [ ] `npm test` passes.
+- [ ] `npm start` connects and runs without credential/symbol errors.
+- [ ] `TRADING_PAIRS` contains only pairs you intend to trade.
+- [ ] `config.ctraderSymbolIds` matches your cTrader account.
+- [ ] `RISK_PER_TRADE_PERCENT`, daily gates, and max-trade caps are acceptable.
+- [ ] You understand that `npm run auto`, PM2, and Docker auto-execute commands can place real orders if `CTRADER_ENV=live` and live account credentials are used.
+
