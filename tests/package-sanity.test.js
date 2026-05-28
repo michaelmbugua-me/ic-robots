@@ -12,11 +12,14 @@ for (const [name, command] of Object.entries(pkg.scripts ?? {})) {
   }
 }
 
-assert.ok(pkg.scripts.auto.includes("STRATEGY_MODE=ny_asian_continuation"), "auto script should explicitly use the current strategy");
+assert.ok(pkg.scripts.auto.includes("STRATEGY_MODE=combined_ny_london"), "auto script should explicitly run the combined NY/London strategy router");
+assert.ok(pkg.scripts.auto.includes("LONDON_MONITOR_ENABLED=true"), "auto script should observe the London cleaned profile");
+assert.ok(pkg.scripts.auto.includes("LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS=Wed"), "auto script should use the cleaned Wednesday-only London profile");
 assert.ok(!pkg.scripts.auto.includes("EMA_SEPARATION_MIN_PIPS"), "auto script should not advertise EMA-only filters for NY Asian mode");
 assert.ok(!pkg.scripts["backtest-mock"], "stale backtest-mock script should stay removed");
 assert.ok(!pkg.scripts["backtest-multi-mock"], "stale backtest-multi-mock script should stay removed");
-assert.deepEqual(config.strategy.supportedModes, ["ny_asian_continuation"], "only the active strategy mode should be supported");
+assert.deepEqual(config.strategy.supportedModes, ["ny_asian_continuation", "london_asian_fake_break_reversal", "combined_ny_london"], "supported strategy modes should include NY, London, and the combined router");
+assert.ok(pkg.scripts["backtest:london-fake-break"].includes("STRATEGY_MODE=london_asian_fake_break_reversal"), "London fake-break backtest script should use the London strategy mode");
 assert.equal(config.backtest.spreadPips, 0.7, "backtest spread default should stay conservative and configurable");
 assert.equal(config.backtest.slippagePips, 0.3, "backtest slippage default should stay conservative and configurable");
 assert.equal(config.risk.riskPerTradePercent, 0.5, "risk per trade should default to the recommended 0.5% live/backtest risk");
@@ -28,7 +31,6 @@ assert.doesNotMatch(sourceText, /generate(NYOpeningRange|SessionSweep|Smash)/, "
 assert.doesNotMatch(sourceText, /\b(ny_orb|session_sweep|smash_buy|smash_sell|smash)\b/, "removed dormant strategy mode names should stay removed");
 
 console.log("package sanity tests passed");
-
 
 
 

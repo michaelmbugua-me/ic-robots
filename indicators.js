@@ -210,3 +210,210 @@ export function generateNYAsianContinuationSignal(candles, opts = {}) {
   };
 }
 
+/**
+ * London Asian-range fake-break reversal setup.
+ *
+ * Candidate B research profile:
+ * - London session only, default 07:00–10:00 UTC
+ * - Tuesday/Wednesday/Thursday only
+ * - First one-sided London break of the Asian range
+ * - Break must close back inside within 2 M5 bars
+ * - Risk must be 5–10 pips
+ * - Target is the opposite side of the Asian range
+ *
+ * @param {Array} candles - Closed M5 candles, oldest first
+ * @param {object} opts
+ * @param {{ high: number, low: number, start?: number, end?: number, name?: string }} opts.asianRange
+ * @returns {{ signal: 'buy'|'sell'|'none', direction: 'BUY'|'SELL'|null, entry: number|null, sl: number|null, tp: number|null, riskPips: number|null, rewardPips: number|null, reason: string }}
+ */
+export function generateLondonAsianFakeBreakReversalSignal(candles, opts = {}) {
+  const NO_SIGNAL = (reason, extras = {}) => ({
+    signal: 'none',
+    direction: null,
+    entry: null,
+    sl: null,
+    tp: null,
+    riskPips: null,
+    rewardPips: null,
+    ...extras,
+    reason,
+  });
+
+  const asianRange = opts.asianRange;
+  if (!asianRange || !Number.isFinite(asianRange.high) || !Number.isFinite(asianRange.low) || asianRange.high <= asianRange.low) {
+    return NO_SIGNAL('Asian range unavailable or invalid');
+  }
+
+  if (!Array.isArray(candles) || candles.length < 20) {
+    return NO_SIGNAL('Not enough candles for London Asian fake-break setup');
+  }
+
+  const pipSize = opts.isJPY ? 0.01 : 0.0001;
+  const asianRangePips = (asianRange.high - asianRange.low) / pipSize;
+  const minAsianRangePips = Number(opts.minAsianRangePips ?? 0);
+  const maxAsianRangePips = Number(opts.maxAsianRangePips ?? 0);
+  if (Number.isFinite(minAsianRangePips) && minAsianRangePips > 0 && asianRangePips < minAsianRangePips) {
+    return NO_SIGNAL(`Asian range too narrow (${asianRangePips.toFixed(1)}p) — below ${minAsianRangePips}p minimum`);
+  }
+  if (Number.isFinite(maxAsianRangePips) && maxAsianRangePips > 0 && asianRangePips > maxAsianRangePips) {
+    return NO_SIGNAL(`Asian range too wide (${asianRangePips.toFixed(1)}p) — above ${maxAsianRangePips}p maximum`);
+  }
+
+  const norm = candles.map(normalizeCandle);
+  if (norm.some(c => !Number.isFinite(c.open) || !Number.isFinite(c.high) || !Number.isFinite(c.low) || !Number.isFinite(c.close) || c.open <= 0 || c.high <= 0 || c.low <= 0 || c.close <= 0)) {
+    return NO_SIGNAL('Invalid candle data — NaN or zero prices detected');
+  }
+
+  const last = norm.at(-1);
+  const latestTime = new Date(last.time);
+  const latestHour = latestTime.getUTCHours() + latestTime.getUTCMinutes() / 60;
+  const tradeStartUTC = opts.tradeStartUTC ?? 7.0;
+  const tradeEndUTC = opts.tradeEndUTC ?? 10.0;
+  if (latestHour < tradeStartUTC || latestHour >= tradeEndUTC) {
+    return NO_SIGNAL('Outside London fake-break trade window');
+  }
+
+  const allowedWeekdays = opts.allowedWeekdays ?? ['Tue', 'Wed', 'Thu'];
+  const weekday = weekdayUTC(latestTime);
+  if (Array.isArray(allowedWeekdays) && allowedWeekdays.length > 0 && !allowedWeekdays.includes(weekday)) {
+    return NO_SIGNAL(`London fake-break blocked on ${weekday}`);
+  }
+
+  const minBreak = (opts.minBreakPips ?? 4.0) * pipSize;
+  const stopBuffer = (opts.stopBufferPips ?? 0.5) * pipSize;
+  const confirmBars = opts.confirmBars ?? 2;
+  const minConfirmationBarsAfterBreak = Math.max(0, Number(opts.minConfirmationBarsAfterBreak ?? 0));
+  const minRiskPips = opts.minRiskPips ?? 5;
+  const maxRiskPips = opts.maxRiskPips ?? 10;
+  const targetMode = opts.targetMode ?? 'asian_opposite';
+  const h1Filter = opts.h1Filter ?? 'all';
+  const day = latestTime.toISOString().slice(0, 10);
+
+  const london = norm
+    .map((c, index) => ({ c, index }))
+    .filter(({ c }) => {
+      const d = new Date(c.time);
+      const h = d.getUTCHours() + d.getUTCMinutes() / 60;
+      return d.toISOString().slice(0, 10) === day && h >= tradeStartUTC && h < tradeEndUTC;
+    });
+
+  let breakEvent = null;
+  for (let localIndex = 0; localIndex < london.length; localIndex++) {
+    const { c, index } = london[localIndex];
+    const brokeHigh = c.high >= asianRange.high + minBreak;
+    const brokeLow = c.low <= asianRange.low - minBreak;
+    if (brokeHigh === brokeLow) continue;
+    breakEvent = {
+      candle: c,
+      index,
+      localIndex,
+      breakDirection: brokeHigh ? 'up' : 'down',
+      brokeUp: brokeHigh,
+      breakPips: brokeHigh ? (c.high - asianRange.high) / pipSize : (asianRange.low - c.low) / pipSize,
+    };
+    break;
+  }
+
+  if (!breakEvent) return NO_SIGNAL('No one-sided London break of Asian range yet');
+
+  let confirmation = null;
+  const maxConfirmLocalIndex = Math.min(london.length - 1, breakEvent.localIndex + confirmBars);
+  for (let localIndex = breakEvent.localIndex; localIndex <= maxConfirmLocalIndex; localIndex++) {
+    const { c, index } = london[localIndex];
+    const closedBackInside = breakEvent.brokeUp ? c.close < asianRange.high : c.close > asianRange.low;
+    const barsAfterBreak = localIndex - breakEvent.localIndex;
+    if (closedBackInside && barsAfterBreak >= minConfirmationBarsAfterBreak) {
+      confirmation = { candle: c, index, localIndex, barsAfterBreak: localIndex - breakEvent.localIndex };
+      break;
+    }
+  }
+
+  if (!confirmation) {
+    const latestLondonIndex = london.findIndex(({ c }) => c.time === last.time);
+    if (latestLondonIndex > breakEvent.localIndex + confirmBars) {
+      return NO_SIGNAL('London fake-break confirmation expired');
+    }
+    return NO_SIGNAL('Waiting for London break to close back inside Asian range');
+  }
+
+  if (confirmation.candle.time !== last.time) {
+    return NO_SIGNAL('London fake-break already confirmed on an earlier candle');
+  }
+
+  const h1Trend = typeof opts.higherTimeframeTrend === 'string' ? opts.higherTimeframeTrend : null;
+  const breakAlignedWithH1 = (breakEvent.brokeUp && h1Trend === 'bull') || (!breakEvent.brokeUp && h1Trend === 'bear');
+  const reversalAlignedWithH1 = (breakEvent.brokeUp && h1Trend === 'bear') || (!breakEvent.brokeUp && h1Trend === 'bull');
+  if (opts.noFadeH1AlignedBreak && breakAlignedWithH1) {
+    return NO_SIGNAL(`London fake-break no-fade filter blocked ${breakEvent.breakDirection} break aligned with H1 ${h1Trend}`);
+  }
+  if (!passesLondonFakeBreakH1Filter(h1Filter, h1Trend, breakAlignedWithH1, reversalAlignedWithH1)) {
+    return NO_SIGNAL(`London fake-break H1 filter ${h1Filter} blocked setup — HTF trend ${h1Trend ?? 'none'}`);
+  }
+
+  const extremeWindow = norm.slice(breakEvent.index, confirmation.index + 1);
+  const direction = breakEvent.brokeUp ? 'SELL' : 'BUY';
+  const signal = direction === 'SELL' ? 'sell' : 'buy';
+  const entry = confirmation.candle.close;
+  const sl = direction === 'SELL'
+    ? Math.max(...extremeWindow.map(c => c.high)) + stopBuffer
+    : Math.min(...extremeWindow.map(c => c.low)) - stopBuffer;
+  const tp = targetMode === 'time_exit' ? null : direction === 'SELL' ? asianRange.low : asianRange.high;
+  const risk = direction === 'SELL' ? sl - entry : entry - sl;
+  const reward = Number.isFinite(tp) ? direction === 'SELL' ? entry - tp : tp - entry : null;
+  const riskPips = risk / pipSize;
+  const rewardPips = Number.isFinite(reward) ? reward / pipSize : null;
+
+  if (risk <= 0) return NO_SIGNAL(`Invalid ${direction} risk — stop is on the wrong side of entry`);
+  if (targetMode !== 'time_exit' && reward <= 0) return NO_SIGNAL(`Invalid ${direction} target — opposite Asian range side is not beyond entry`);
+  if (riskPips < minRiskPips) return NO_SIGNAL(`Risk too small (${riskPips.toFixed(1)}p) — below ${minRiskPips}p minimum`);
+  if (riskPips > maxRiskPips) return NO_SIGNAL(`Risk too large (${riskPips.toFixed(1)}p) — above ${maxRiskPips}p maximum`);
+
+  const levelName = breakEvent.brokeUp ? 'asian_high' : 'asian_low';
+  return {
+    signal,
+    direction,
+    trend: direction === 'SELL' ? 'bear' : 'bull',
+    entry: +entry.toFixed(5),
+    sl: +sl.toFixed(5),
+    tp: Number.isFinite(tp) ? +tp.toFixed(5) : null,
+    riskPips: +riskPips.toFixed(1),
+    rewardPips: Number.isFinite(rewardPips) ? +rewardPips.toFixed(1) : null,
+    setupTime: confirmation.candle.time,
+    strategy: 'london_asian_fake_break_reversal',
+    targetMode,
+    h1Filter,
+    h1Trend,
+    breakAlignedWithH1,
+    reversalAlignedWithH1,
+    asianRangePips: +asianRangePips.toFixed(1),
+    noFadeH1AlignedBreak: !!opts.noFadeH1AlignedBreak,
+    minConfirmationBarsAfterBreak,
+    timeExitBars: opts.timeExitBars,
+    breakDirection: breakEvent.breakDirection,
+    breakPips: +breakEvent.breakPips.toFixed(1),
+    confirmationBarsUsed: confirmation.barsAfterBreak,
+    levelName,
+    asianHigh: +asianRange.high.toFixed(5),
+    asianLow: +asianRange.low.toFixed(5),
+    weekday,
+    reason: `LONDON ASIAN FAKE-BREAK ${direction} — ${breakEvent.breakDirection} break of ${levelName}, ` +
+            `closed back inside after ${confirmation.barsAfterBreak} bar(s), entry ${entry.toFixed(5)}, ` +
+            `SL ${sl.toFixed(5)}, TP ${Number.isFinite(tp) ? tp.toFixed(5) : 'time-exit'}; ` +
+            `risk ${riskPips.toFixed(1)}p reward ${Number.isFinite(rewardPips) ? rewardPips.toFixed(1) : 'time-exit'}p`,
+  };
+}
+
+function passesLondonFakeBreakH1Filter(filter, h1Trend, breakAlignedWithH1, reversalAlignedWithH1) {
+  if (!filter || filter === 'all') return true;
+  if (filter === 'break_with_h1') return breakAlignedWithH1;
+  if (filter === 'reversal_with_h1') return reversalAlignedWithH1;
+  if (filter === 'break_counter_h1') return !breakAlignedWithH1 && h1Trend && h1Trend !== 'neutral';
+  if (filter === 'reversal_counter_h1') return !reversalAlignedWithH1 && h1Trend && h1Trend !== 'neutral';
+  if (['bull', 'bear', 'neutral'].includes(filter)) return h1Trend === filter;
+  return false;
+}
+
+function weekdayUTC(date) {
+  return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getUTCDay()];
+}
+

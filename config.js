@@ -45,11 +45,34 @@ const sessionWindowPresetsUTC = {
 
 const sessionWindowMode = process.env.SESSION_WINDOW_MODE || "all_windows";
 const selectedSessionWindowsUTC = sessionWindowPresetsUTC[sessionWindowMode] || sessionWindowPresetsUTC.ny_only;
-const supportedStrategyModes = ["ny_asian_continuation"];
+const supportedStrategyModes = ["ny_asian_continuation", "london_asian_fake_break_reversal", "combined_ny_london"];
 const strategyMode = process.env.STRATEGY_MODE || "ny_asian_continuation";
 if (!supportedStrategyModes.includes(strategyMode)) {
   throw new Error(`Unsupported STRATEGY_MODE="${strategyMode}". Supported modes: ${supportedStrategyModes.join(", ")}`);
 }
+
+const londonFakeBreakProfile = process.env.LONDON_FAKE_BREAK_PROFILE || "candidate_b";
+const londonFakeBreakProfiles = {
+  candidate_b: {
+    description: "Candidate B — opposite Asian range target, 4p break, 2-bar confirmation",
+    minBreakPips: 4.0,
+    confirmBars: 2,
+    minRiskPips: 5,
+    maxRiskPips: 10,
+    targetMode: "asian_opposite",
+    h1Filter: "all",
+  },
+  candidate_a_time_exit: {
+    description: "Candidate A — strongest cross-pair research row, H1 reversal-aligned time exit",
+    minBreakPips: 2.0,
+    confirmBars: 3,
+    minRiskPips: 5,
+    maxRiskPips: 10,
+    targetMode: "time_exit",
+    h1Filter: "reversal_with_h1",
+  },
+};
+const selectedLondonFakeBreakProfile = londonFakeBreakProfiles[londonFakeBreakProfile] || londonFakeBreakProfiles.candidate_b;
 
 export const config = {
 
@@ -158,6 +181,41 @@ export const config = {
       timeExitBars: envNumber("NY_ASIAN_TIME_EXIT_BARS", 12),
       maxTradesPerSession: envNumber("NY_ASIAN_MAX_TRADES_PER_SESSION", 1),
       lookbackCandles: envNumber("NY_ASIAN_LOOKBACK_CANDLES", 220),
+    },
+    londonAsianFakeBreakReversal: {
+      enabled: true,
+      monitorEnabled: envBool("LONDON_MONITOR_ENABLED", false),
+      liveExecutionEnabled: envBool("LONDON_LIVE_EXECUTION_ENABLED", false),
+      profile: londonFakeBreakProfile,
+      profileDescription: selectedLondonFakeBreakProfile.description,
+      availableProfiles: Object.keys(londonFakeBreakProfiles),
+      allowedSessionNames: envList("LONDON_FAKE_BREAK_ALLOWED_SESSIONS", ["london_open"]),
+      allowedPairs: envList("LONDON_FAKE_BREAK_ALLOWED_PAIRS", []),
+      allowedWeekdays: envList("LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS", ["Tue", "Wed", "Thu"]),
+      excludedPairWeekdays: Object.fromEntries(envList("LONDON_FAKE_BREAK_EXCLUDED_PAIR_WEEKDAYS", []).map(item => {
+        const [pair, day] = item.split(":").map(v => v?.trim()).filter(Boolean);
+        return pair && day ? [pair, day] : null;
+      }).filter(Boolean)),
+      asianStartUTC: envNumber("LONDON_FAKE_BREAK_ASIAN_START_UTC", 0),
+      asianEndUTC: envNumber("LONDON_FAKE_BREAK_ASIAN_END_UTC", 7),
+      tradeStartUTC: envNumber("LONDON_FAKE_BREAK_TRADE_START_UTC", 7.0),
+      tradeEndUTC: envNumber("LONDON_FAKE_BREAK_TRADE_END_UTC", 10.0),
+      minBreakPips: envNumber("LONDON_FAKE_BREAK_MIN_BREAK_PIPS", selectedLondonFakeBreakProfile.minBreakPips),
+      confirmBars: envNumber("LONDON_FAKE_BREAK_CONFIRM_BARS", selectedLondonFakeBreakProfile.confirmBars),
+      stopBufferPips: envNumber("LONDON_FAKE_BREAK_STOP_BUFFER_PIPS", 0.5),
+      minRiskPips: envNumber("LONDON_FAKE_BREAK_MIN_RISK_PIPS", selectedLondonFakeBreakProfile.minRiskPips),
+      maxRiskPips: envNumber("LONDON_FAKE_BREAK_MAX_RISK_PIPS", selectedLondonFakeBreakProfile.maxRiskPips),
+      targetMode: process.env.LONDON_FAKE_BREAK_TARGET_MODE || selectedLondonFakeBreakProfile.targetMode,
+      h1Filter: process.env.LONDON_FAKE_BREAK_H1_FILTER || selectedLondonFakeBreakProfile.h1Filter,
+      noFadeH1AlignedBreak: envBool("LONDON_FAKE_BREAK_NO_FADE_H1_ALIGNED", false),
+      minAsianRangePips: envNumber("LONDON_FAKE_BREAK_MIN_ASIAN_RANGE_PIPS", 0),
+      maxAsianRangePips: envNumber("LONDON_FAKE_BREAK_MAX_ASIAN_RANGE_PIPS", 0),
+      minConfirmationBarsAfterBreak: envNumber("LONDON_FAKE_BREAK_MIN_CONFIRMATION_BARS_AFTER_BREAK", 0),
+      timeExitBars: envNumber("LONDON_FAKE_BREAK_TIME_EXIT_BARS", 12),
+      maxTradesPerSession: envNumber("LONDON_FAKE_BREAK_MAX_TRADES_PER_SESSION", 1),
+      maxLossesPerDay: envNumber("LONDON_MAX_LOSSES_PER_DAY", 0),
+      maxDailyLossUSD: envNumber("LONDON_MAX_DAILY_LOSS_USD", 0),
+      lookbackCandles: envNumber("LONDON_FAKE_BREAK_LOOKBACK_CANDLES", 220),
     },
   },
 

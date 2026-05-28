@@ -1,0 +1,568 @@
+{
+  "generatedAtUTC": "2026-05-21T12:11:02.758Z",
+  "cases": [
+    {
+      "key": "london_usdjpy",
+      "label": "London Candidate B USD_JPY only",
+      "summary": {
+        "total": 113,
+        "wins": 48,
+        "losses": 65,
+        "winRate": "42.5",
+        "netProfit": 153.4205718003086,
+        "finalBalance": 2091.4050679243396,
+        "dailyRiskSimulation": {
+          "blockedDays": 6,
+          "blockedSignals": 0,
+          "blockedPendingTriggers": 0
+        }
+      },
+      "byPair": {
+        "USD_JPY": {
+          "total": 113,
+          "wins": 48,
+          "losses": 65,
+          "winRate": "42.5",
+          "grossProfit": 782.37,
+          "grossLoss": 628.95,
+          "netProfit": 153.42,
+          "profitFactor": "1.244",
+          "expectancy": 1.358,
+          "avgWin": 16.3,
+          "avgLoss": -9.68
+        }
+      },
+      "diagnostics": {
+        "byPair": [
+          {
+            "key": "USD_JPY",
+            "n": 113,
+            "winRate": 42.47787610619469,
+            "net": 153.4205718003079,
+            "profitFactor": 1.2439303754688686,
+            "expectancy": 1.3577041752239636,
+            "avgWin": 16.299434923914877,
+            "avgLoss": -9.676189300732405
+          }
+        ],
+        "byWeekday": [
+          {
+            "key": "Wed",
+            "n": 31,
+            "winRate": 41.935483870967744,
+            "net": 88.17196463353004,
+            "profitFactor": 1.485680251206065,
+            "expectancy": 2.8442569236622592,
+            "avgWin": 20.74732315231,
+            "avgLoss": -10.085735352583328
+          },
+          {
+            "key": "Tue",
+            "n": 46,
+            "winRate": 39.130434782608695,
+            "net": 32.66569955860428,
+            "profitFactor": 1.1250932899694652,
+            "expectancy": 0.7101239034479192,
+            "avgWin": 16.32202272334123,
+            "avgLoss": -9.326096766483493
+          },
+          {
+            "key": "Thu",
+            "n": 36,
+            "winRate": 47.22222222222222,
+            "net": 32.5829076081736,
+            "profitFactor": 1.174915152939086,
+            "expectancy": 0.9050807668937111,
+            "avgWin": 12.87419213810248,
+            "avgLoss": -9.804124144187819
+          }
+        ],
+        "byHour": [
+          {
+            "key": "08:00-09:00",
+            "n": 35,
+            "winRate": 51.42857142857142,
+            "net": 103.38936497360757,
+            "profitFactor": 1.5992781846372623,
+            "expectancy": 2.9539818563887876,
+            "avgWin": 15.328473502193718,
+            "avgLoss": -10.148421062698782
+          },
+          {
+            "key": "07:00-08:00",
+            "n": 69,
+            "winRate": 40.57971014492754,
+            "net": 64.63644995316925,
+            "profitFactor": 1.1555326148403837,
+            "expectancy": 0.9367601442488297,
+            "avgWin": 17.150634773162203,
+            "avgLoss": -10.136129846228597
+          },
+          {
+            "key": "09:00-10:00",
+            "n": 9,
+            "winRate": 22.22222222222222,
+            "net": -14.605243126468903,
+            "profitFactor": 0.6424474517807622,
+            "expectancy": -1.622804791829878,
+            "avgWin": 13.121289829942805,
+            "avgLoss": -5.835403255193502
+          }
+        ],
+        "byBreakDirection": [
+          {
+            "key": "break_down_inferred",
+            "n": 64,
+            "winRate": 43.75,
+            "net": 182.74002435572697,
+            "profitFactor": 1.5187445615120339,
+            "expectancy": 2.855312880558234,
+            "avgWin": 19.107630142932965,
+            "avgLoss": -9.785378323511004
+          },
+          {
+            "key": "break_up_inferred",
+            "n": 49,
+            "winRate": 40.816326530612244,
+            "net": -29.319452555418955,
+            "profitFactor": 0.8940306783448547,
+            "expectancy": -0.5983561746003868,
+            "avgWin": 12.367961617289561,
+            "avgLoss": -9.540644306938281
+          }
+        ],
+        "byRiskBand": [
+          {
+            "key": "unknown",
+            "n": 113,
+            "winRate": 42.47787610619469,
+            "net": 153.4205718003079,
+            "profitFactor": 1.2439303754688686,
+            "expectancy": 1.3577041752239636,
+            "avgWin": 16.299434923914877,
+            "avgLoss": -9.676189300732405
+          }
+        ],
+        "byExitReason": [
+          {
+            "key": "TIME",
+            "n": 60,
+            "winRate": 78.33333333333333,
+            "net": 691.1839911118818,
+            "profitFactor": 15.932539733513451,
+            "expectancy": 11.51973318519803,
+            "avgWin": 15.690874323449659,
+            "avgLoss": -3.560546314634771
+          },
+          {
+            "key": "TP",
+            "n": 1,
+            "winRate": 100,
+            "net": 44.901783145780286,
+            "profitFactor": null,
+            "expectancy": 44.901783145780286,
+            "avgWin": 44.901783145780286,
+            "avgLoss": 0
+          },
+          {
+            "key": "SL",
+            "n": 52,
+            "winRate": 0,
+            "net": -582.6652024573542,
+            "profitFactor": 0,
+            "expectancy": -11.205100047256812,
+            "avgWin": 0,
+            "avgLoss": -11.205100047256812
+          }
+        ],
+        "byPairHour": [
+          {
+            "key": "USD_JPY 08:00-09:00",
+            "n": 35,
+            "winRate": 51.42857142857142,
+            "net": 103.38936497360757,
+            "profitFactor": 1.5992781846372623,
+            "expectancy": 2.9539818563887876,
+            "avgWin": 15.328473502193718,
+            "avgLoss": -10.148421062698782
+          },
+          {
+            "key": "USD_JPY 07:00-08:00",
+            "n": 69,
+            "winRate": 40.57971014492754,
+            "net": 64.63644995316925,
+            "profitFactor": 1.1555326148403837,
+            "expectancy": 0.9367601442488297,
+            "avgWin": 17.150634773162203,
+            "avgLoss": -10.136129846228597
+          },
+          {
+            "key": "USD_JPY 09:00-10:00",
+            "n": 9,
+            "winRate": 22.22222222222222,
+            "net": -14.605243126468903,
+            "profitFactor": 0.6424474517807622,
+            "expectancy": -1.622804791829878,
+            "avgWin": 13.121289829942805,
+            "avgLoss": -5.835403255193502
+          }
+        ],
+        "byPairWeekday": [
+          {
+            "key": "USD_JPY Wed",
+            "n": 31,
+            "winRate": 41.935483870967744,
+            "net": 88.17196463353004,
+            "profitFactor": 1.485680251206065,
+            "expectancy": 2.8442569236622592,
+            "avgWin": 20.74732315231,
+            "avgLoss": -10.085735352583328
+          },
+          {
+            "key": "USD_JPY Tue",
+            "n": 46,
+            "winRate": 39.130434782608695,
+            "net": 32.66569955860428,
+            "profitFactor": 1.1250932899694652,
+            "expectancy": 0.7101239034479192,
+            "avgWin": 16.32202272334123,
+            "avgLoss": -9.326096766483493
+          },
+          {
+            "key": "USD_JPY Thu",
+            "n": 36,
+            "winRate": 47.22222222222222,
+            "net": 32.5829076081736,
+            "profitFactor": 1.174915152939086,
+            "expectancy": 0.9050807668937111,
+            "avgWin": 12.87419213810248,
+            "avgLoss": -9.804124144187819
+          }
+        ]
+      }
+    },
+    {
+      "key": "london_eurusd_usdjpy_braked",
+      "label": "London Candidate B EUR_USD+USD_JPY max 1 loss/day",
+      "summary": {
+        "total": 316,
+        "wins": 136,
+        "losses": 180,
+        "winRate": "43.0",
+        "netProfit": 238.419681058871,
+        "finalBalance": 2176.404177182902,
+        "dailyRiskSimulation": {
+          "blockedDays": 9,
+          "blockedSignals": 0,
+          "blockedPendingTriggers": 0
+        }
+      },
+      "byPair": {
+        "EUR_USD": {
+          "total": 208,
+          "wins": 89,
+          "losses": 119,
+          "winRate": "42.8",
+          "grossProfit": 1224.49,
+          "grossLoss": 1175.82,
+          "netProfit": 48.67,
+          "profitFactor": "1.041",
+          "expectancy": 0.234,
+          "avgWin": 13.76,
+          "avgLoss": -9.88
+        },
+        "USD_JPY": {
+          "total": 108,
+          "wins": 47,
+          "losses": 61,
+          "winRate": "43.5",
+          "grossProfit": 773.23,
+          "grossLoss": 583.48,
+          "netProfit": 189.75,
+          "profitFactor": "1.325",
+          "expectancy": 1.757,
+          "avgWin": 16.45,
+          "avgLoss": -9.57
+        }
+      },
+      "diagnostics": {
+        "byPair": [
+          {
+            "key": "USD_JPY",
+            "n": 108,
+            "winRate": 43.51851851851852,
+            "net": 189.7501360588206,
+            "profitFactor": 1.3252064237752235,
+            "expectancy": 1.756945704248339,
+            "avgWin": 16.451619441170084,
+            "avgLoss": -9.565179961904482
+          },
+          {
+            "key": "EUR_USD",
+            "n": 208,
+            "winRate": 42.78846153846153,
+            "net": 48.66954500004798,
+            "profitFactor": 1.0413918636256128,
+            "expectancy": 0.2339881971156153,
+            "avgWin": 13.75835398876459,
+            "avgLoss": -9.880873613445383
+          }
+        ],
+        "byWeekday": [
+          {
+            "key": "Wed",
+            "n": 103,
+            "winRate": 51.45631067961165,
+            "net": 334.7049913834407,
+            "profitFactor": 1.6760761550479506,
+            "expectancy": 3.249563023140201,
+            "avgWin": 15.65613105622739,
+            "avgLoss": -9.901399091932223
+          },
+          {
+            "key": "Tue",
+            "n": 104,
+            "winRate": 43.269230769230774,
+            "net": 83.14867876417573,
+            "profitFactor": 1.143909345370152,
+            "expectancy": 0.7995065265786128,
+            "avgWin": 14.68741780904971,
+            "avgLoss": -9.792968180390863
+          },
+          {
+            "key": "Thu",
+            "n": 109,
+            "winRate": 34.862385321100916,
+            "net": -179.43398908874778,
+            "profitFactor": 0.7386039295644987,
+            "expectancy": -1.6461833861353008,
+            "avgWin": 13.342391351256685,
+            "avgLoss": -9.668237470936642
+          }
+        ],
+        "byHour": [
+          {
+            "key": "08:00-09:00",
+            "n": 95,
+            "winRate": 47.368421052631575,
+            "net": 205.66794248224605,
+            "profitFactor": 1.4166436264955935,
+            "expectancy": 2.164925710339432,
+            "avgWin": 15.539962231701818,
+            "avgLoss": -9.872607158886717
+          },
+          {
+            "key": "07:00-08:00",
+            "n": 186,
+            "winRate": 43.01075268817204,
+            "net": 166.71651995319468,
+            "profitFactor": 1.1592241687820621,
+            "expectancy": 0.8963253760924444,
+            "avgWin": 15.172148545607095,
+            "avgLoss": -9.877880789578985
+          },
+          {
+            "key": "09:00-10:00",
+            "n": 35,
+            "winRate": 31.428571428571427,
+            "net": -133.96478137657218,
+            "profitFactor": 0.38720919524178454,
+            "expectancy": -3.8275651821877763,
+            "avgWin": 7.69540315089941,
+            "avgLoss": -9.108925668186071
+          }
+        ],
+        "byBreakDirection": [
+          {
+            "key": "break_up_inferred",
+            "n": 156,
+            "winRate": 45.51282051282051,
+            "net": 154.4845731959498,
+            "profitFactor": 1.1877805855568608,
+            "expectancy": 0.9902857256150628,
+            "avgWin": 13.762974399236857,
+            "avgLoss": -9.67866598999843
+          },
+          {
+            "key": "break_down_inferred",
+            "n": 160,
+            "winRate": 40.625,
+            "net": 83.93510786291866,
+            "profitFactor": 1.0896155385648678,
+            "expectancy": 0.5245944241432416,
+            "avgWin": 15.70074517521886,
+            "avgLoss": -9.859087668697972
+          }
+        ],
+        "byRiskBand": [
+          {
+            "key": "unknown",
+            "n": 316,
+            "winRate": 43.037974683544306,
+            "net": 238.41968105886866,
+            "profitFactor": 1.135519632527125,
+            "expectancy": 0.7544926615786983,
+            "avgWin": 14.689114843640024,
+            "avgLoss": -9.77388854264541
+          }
+        ],
+        "byExitReason": [
+          {
+            "key": "TIME",
+            "n": 142,
+            "winRate": 78.87323943661971,
+            "net": 1311.752903498991,
+            "profitFactor": 13.067310729926122,
+            "expectancy": 9.237696503514021,
+            "avgWin": 12.682642014189755,
+            "avgLoss": -3.6234334030087085
+          },
+          {
+            "key": "TP",
+            "n": 24,
+            "winRate": 100,
+            "net": 577.26371314579,
+            "profitFactor": null,
+            "expectancy": 24.052654714407918,
+            "avgWin": 24.052654714407918,
+            "avgLoss": 0
+          },
+          {
+            "key": "SL",
+            "n": 150,
+            "winRate": 0,
+            "net": -1650.5969355859133,
+            "profitFactor": 0,
+            "expectancy": -11.003979570572756,
+            "avgWin": 0,
+            "avgLoss": -11.003979570572756
+          }
+        ],
+        "byPairHour": [
+          {
+            "key": "USD_JPY 08:00-09:00",
+            "n": 31,
+            "winRate": 54.83870967741935,
+            "net": 128.31659748223564,
+            "profitFactor": 1.926813819263251,
+            "expectancy": 4.139245080072118,
+            "avgWin": 15.692103554503928,
+            "avgLoss": -9.88922592459508
+          },
+          {
+            "key": "EUR_USD 07:00-08:00",
+            "n": 117,
+            "winRate": 44.44444444444444,
+            "net": 102.08007000002547,
+            "profitFactor": 1.1616536287066141,
+            "expectancy": 0.8724792307694484,
+            "avgWin": 14.1068098076928,
+            "avgLoss": -9.71498523076923
+          },
+          {
+            "key": "EUR_USD 08:00-09:00",
+            "n": 64,
+            "winRate": 43.75,
+            "net": 77.35134500001035,
+            "profitFactor": 1.2177799559461737,
+            "expectancy": 1.2086147656251618,
+            "avgWin": 15.447590714286251,
+            "avgLoss": -9.866144305555686
+          },
+          {
+            "key": "USD_JPY 07:00-08:00",
+            "n": 69,
+            "winRate": 40.57971014492754,
+            "net": 64.63644995316925,
+            "profitFactor": 1.1555326148403837,
+            "expectancy": 0.9367601442488297,
+            "avgWin": 17.150634773162203,
+            "avgLoss": -10.136129846228597
+          },
+          {
+            "key": "USD_JPY 09:00-10:00",
+            "n": 8,
+            "winRate": 25,
+            "net": -3.2029113765843427,
+            "profitFactor": 0.8912257441175849,
+            "expectancy": -0.40036392207304283,
+            "avgWin": 13.121289829942805,
+            "avgLoss": -4.907581839411659
+          },
+          {
+            "key": "EUR_USD 09:00-10:00",
+            "n": 27,
+            "winRate": 33.33333333333333,
+            "net": -130.76186999998788,
+            "profitFactor": 0.3087553452612699,
+            "expectancy": -4.843032222221773,
+            "avgWin": 6.489650555556435,
+            "avgLoss": -10.509373611110878
+          }
+        ],
+        "byPairWeekday": [
+          {
+            "key": "EUR_USD Wed",
+            "n": 73,
+            "winRate": 54.794520547945204,
+            "net": 235.13069500002604,
+            "profitFactor": 1.7236370370701821,
+            "expectancy": 3.220968424657891,
+            "avgWin": 14.001493625000544,
+            "avgLoss": -9.84633484848472
+          },
+          {
+            "key": "USD_JPY Wed",
+            "n": 30,
+            "winRate": 43.333333333333336,
+            "net": 99.5742963834146,
+            "profitFactor": 1.585246073655797,
+            "expectancy": 3.319143212780487,
+            "avgWin": 20.74732315231,
+            "avgLoss": -10.008288505683254
+          },
+          {
+            "key": "USD_JPY Tue",
+            "n": 43,
+            "winRate": 39.53488372093023,
+            "net": 46.54153876416587,
+            "profitFactor": 1.1954638975751957,
+            "expectancy": 1.0823613666085086,
+            "avgWin": 16.744096847483647,
+            "avgLoss": -9.15800414011754
+          },
+          {
+            "key": "USD_JPY Thu",
+            "n": 35,
+            "winRate": 48.57142857142857,
+            "net": 43.634300911240075,
+            "profitFactor": 1.2490159023329779,
+            "expectancy": 1.2466943117497165,
+            "avgWin": 12.87419213810248,
+            "avgLoss": -9.734831413139004
+          },
+          {
+            "key": "EUR_USD Tue",
+            "n": 61,
+            "winRate": 45.90163934426229,
+            "net": 36.60714000000982,
+            "profitFactor": 1.1077704359831626,
+            "expectancy": 0.6001170491804889,
+            "avgWin": 13.4387198214291,
+            "avgLoss": -10.29324287878803
+          },
+          {
+            "key": "EUR_USD Thu",
+            "n": 74,
+            "winRate": 28.37837837837838,
+            "net": -223.06828999998788,
+            "profitFactor": 0.5636532050585047,
+            "expectancy": -3.0144363513511876,
+            "avgWin": 13.721409761905328,
+            "avgLoss": -9.64562066037735
+          }
+        ]
+      }
+    }
+  ]
+}

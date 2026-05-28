@@ -15,6 +15,10 @@ const daysArg = args.find(a => a.startsWith('--days='))?.split('=')[1]
 const chunkArg = args.find(a => a.startsWith('--chunk-size='))?.split('=')[1]
               || (args.includes('--chunk-size') ? args[args.indexOf('--chunk-size') + 1] : null);
 const resume = args.includes('--resume');
+const fromArg = args.find(a => a.startsWith('--from='))?.split('=')[1]
+              || (args.includes('--from') ? args[args.indexOf('--from') + 1] : null);
+const toArg = args.find(a => a.startsWith('--to='))?.split('=')[1]
+              || (args.includes('--to') ? args[args.indexOf('--to') + 1] : null);
 
 const PAIRS = pairArg 
             ? pairArg.split(",").map(s => s.trim()) 
@@ -26,9 +30,9 @@ const PERIOD_MS = {
   M1: 60_000, M5: 300_000, M15: 900_000, M30: 1_800_000,
   H1: 3_600_000, H4: 14_400_000, D1: 86_400_000,
 };
-const days = parseInt(daysArg) || 30;
+const days = parseInt(daysArg) || (fromArg ? 0 : 30);
 const periodMs = PERIOD_MS[GRANULARITY] || 300_000;
-const MAX_BARS = Math.ceil((days * 86_400_000) / periodMs);
+const MAX_BARS = days > 0 ? Math.ceil((days * 86_400_000) / periodMs) : 1_000_000; // Large limit if date range used
 const CHUNK_SIZE = parseInt(chunkArg) || 2500;
 const MAX_RETRIES = 3;
 
@@ -83,6 +87,13 @@ async function main() {
     console.log(`Resume      : ${resume ? "yes" : "no"}`);
     console.log(`Target      : ${MAX_BARS} bars per pair\n`);
 
+    const fromDate = fromArg ? new Date(fromArg) : null;
+    const toDate = toArg ? new Date(toArg) : new Date();
+
+    if (fromDate) {
+      console.log(`Date Range  : ${fromDate.toISOString()} to ${toDate.toISOString()}`);
+    }
+
     // Connect and authenticate once
     process.stdout.write("Connecting to IC Markets...");
     await icmarkets.connect();
@@ -95,22 +106,34 @@ async function main() {
       console.log(`\nFetching ${MAX_BARS} candles for ${PAIR} (${GRANULARITY})...`);
 
       let allBarsMap = loadExistingBars(OUTPUT_FILE); // Use Map to merge Bid and Ask by timestamp
-      let toTimestamp = Date.now();
+      let toTimestamp = toDate.getTime();
       if (resume && allBarsMap.size > 0) {
         const oldest = Array.from(allBarsMap.keys()).sort()[0];
-        toTimestamp = new Date(oldest).getTime();
+        toTimestamp = Math.min(toTimestamp, new Date(oldest).getTime() - 1);
       }
       let fetchedCount = allBarsMap.size;
 
-      while (fetchedCount < MAX_BARS) {
+      const stopTimestamp = fromDate ? fromDate.getTime() : 0;
+
+      while (fetchedCount < MAX_BARS && toTimestamp > stopTimestamp) {
         const remaining = MAX_BARS - fetchedCount;
         const count = Math.min(CHUNK_SIZE, remaining);
 
         process.stdout.write(`  Fetching ${count} bars before ${new Date(toTimestamp).toISOString()}... `);
         
         // Fetch BID
-        const bidBars = await withRetries("BID candles", () => icmarkets.getCandles(PAIR, GRANULARITY, count, null, toTimestamp, 1));
-        if (bidBars.length === 0) {
+        let bidBars;
+        try {
+          bidBars = await withRetries("BID candles", () => icmarkets.getCandles(PAIR, GRANULARITY, count, null, toTimestamp, 1));
+        } catch (err) {
+          if (err.message.includes("No trendbar data")) {
+            console.log(`\n  ⚠️  No more bars returned by broker for ${PAIR} before ${new Date(toTimestamp).toISOString()}. Ending download.`);
+            break;
+          }
+          throw err;
+        }
+
+        if (!bidBars || bidBars.length === 0) {
           console.log(`\n  ⚠️  No more bars returned by broker for ${PAIR}. Ending download.`);
           break;
         }
@@ -137,8 +160,22 @@ async function main() {
           });
         }
 
-        fetchedCount = allBarsMap.size;
-        toTimestamp = new Date(bidBars[0].time).getTime();
+        // toTimestamp is the inclusive upper bound for IC Markets Trendbars.
+        // To avoid fetching the same oldest bar again, we subtract 1ms.
+        toTimestamp = new Date(bidBars[0].time).getTime() - 1;
+
+        if (fromDate && toTimestamp < fromDate.getTime()) {
+           console.log(`✓ (Reached start date: ${fromDate.toISOString()})`);
+           break;
+        }
+
+        const newFetchedCount = allBarsMap.size;
+        if (newFetchedCount === fetchedCount) {
+          console.log(`\n  ⚠️  No new unique bars added (Count: ${newFetchedCount}). Breaking to avoid loop.`);
+          break;
+        }
+        fetchedCount = newFetchedCount;
+
         const saved = saveBars(OUTPUT_FILE, allBarsMap);
 
         console.log(`✓ (Saved: ${saved.length})`);

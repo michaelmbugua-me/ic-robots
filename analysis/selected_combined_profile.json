@@ -1,0 +1,221 @@
+{
+  "generatedAtUTC": "2026-05-28T10:11:49.320Z",
+  "selected": {
+    "londonCase": "london_eurusd_usdjpy_cleaned",
+    "brake": "max_1_loss"
+  },
+  "combinedTradeStats": {
+    "trades": 71,
+    "wins": 40,
+    "losses": 31,
+    "winRate": 56.33802816901409,
+    "grossProfit": 527.2902173328066,
+    "grossLoss": 332.42289918768944,
+    "net": 194.8673181451174,
+    "profitFactor": 1.5862030522605275,
+    "expectancy": 2.7446101147199635,
+    "maxConsecutiveLosses": 4
+  },
+  "monthlyDistribution": [
+    {
+      "month": "2024-12",
+      "trades": 1,
+      "wins": 0,
+      "losses": 1,
+      "net": -11.042436009225536,
+      "winRate": 0
+    },
+    {
+      "month": "2025-01",
+      "trades": 2,
+      "wins": 1,
+      "losses": 1,
+      "net": 6.117435566040008,
+      "winRate": 50
+    },
+    {
+      "month": "2025-02",
+      "trades": 5,
+      "wins": 5,
+      "losses": 0,
+      "net": 84.12151189062243,
+      "winRate": 100
+    },
+    {
+      "month": "2025-03",
+      "trades": 6,
+      "wins": 4,
+      "losses": 2,
+      "net": 54.3692996640814,
+      "winRate": 66.66666666666666
+    },
+    {
+      "month": "2025-04",
+      "trades": 6,
+      "wins": 3,
+      "losses": 3,
+      "net": -3.466546725756185,
+      "winRate": 50
+    },
+    {
+      "month": "2025-05",
+      "trades": 8,
+      "wins": 3,
+      "losses": 5,
+      "net": -32.73091025836996,
+      "winRate": 37.5
+    },
+    {
+      "month": "2025-06",
+      "trades": 5,
+      "wins": 3,
+      "losses": 2,
+      "net": -2.90749873168345,
+      "winRate": 60
+    },
+    {
+      "month": "2025-07",
+      "trades": 8,
+      "wins": 6,
+      "losses": 2,
+      "net": 74.22987318438916,
+      "winRate": 75
+    },
+    {
+      "month": "2025-08",
+      "trades": 3,
+      "wins": 1,
+      "losses": 2,
+      "net": 0.8787239944697323,
+      "winRate": 33.33333333333333
+    },
+    {
+      "month": "2025-09",
+      "trades": 3,
+      "wins": 0,
+      "losses": 3,
+      "net": -35.33286316450055,
+      "winRate": 0
+    },
+    {
+      "month": "2025-10",
+      "trades": 5,
+      "wins": 2,
+      "losses": 3,
+      "net": -0.34207499999636504,
+      "winRate": 40
+    },
+    {
+      "month": "2025-11",
+      "trades": 3,
+      "wins": 2,
+      "losses": 1,
+      "net": 14.32102232080396,
+      "winRate": 66.66666666666666
+    },
+    {
+      "month": "2025-12",
+      "trades": 3,
+      "wins": 2,
+      "losses": 1,
+      "net": 1.0259794546938963,
+      "winRate": 66.66666666666666
+    },
+    {
+      "month": "2026-01",
+      "trades": 7,
+      "wins": 6,
+      "losses": 1,
+      "net": 75.22709744233057,
+      "winRate": 85.71428571428571
+    },
+    {
+      "month": "2026-03",
+      "trades": 2,
+      "wins": 1,
+      "losses": 1,
+      "net": -5.133065000001708,
+      "winRate": 50
+    },
+    {
+      "month": "2026-04",
+      "trades": 2,
+      "wins": 0,
+      "losses": 2,
+      "net": -22.66953643866394,
+      "winRate": 0
+    },
+    {
+      "month": "2026-05",
+      "trades": 2,
+      "wins": 1,
+      "losses": 1,
+      "net": -1.798694044116166,
+      "winRate": 50
+    }
+  ],
+  "selectedCorrelationRow": {
+    "londonCase": "london_eurusd_usdjpy_cleaned",
+    "brake": "max_1_loss",
+    "nyTrades": {
+      "trades": 28,
+      "wins": 22,
+      "losses": 6,
+      "winRate": 78.57142857142857,
+      "net": 134.08927002297918,
+      "profitFactor": 2.909251886818436,
+      "expectancy": 4.788902500820685
+    },
+    "londonTrades": {
+      "trades": 43,
+      "wins": 18,
+      "losses": 25,
+      "winRate": 41.86046511627907,
+      "net": 60.778048122138124,
+      "profitFactor": 1.2318077760999537,
+      "expectancy": 1.4134429795846075
+    },
+    "nyDaily": {
+      "activeDays": 27,
+      "greenDays": 21,
+      "redDays": 6,
+      "net": 134.08927002297924,
+      "avgActiveDay": 4.966269260110342,
+      "maxDailyLoss": -11.978165061272197,
+      "maxDailyWin": 19.21537957694177,
+      "maxDrawdown": 25.156947566917665
+    },
+    "londonDaily": {
+      "activeDays": 43,
+      "greenDays": 18,
+      "redDays": 25,
+      "net": 60.778048122138124,
+      "avgActiveDay": 1.4134429795846075,
+      "maxDailyLoss": -11.855540470772963,
+      "maxDailyWin": 44.901783145780286,
+      "maxDrawdown": 96.9135422116925
+    },
+    "combinedDaily": {
+      "activeDays": 68,
+      "greenDays": 38,
+      "redDays": 30,
+      "net": 194.8673181451174,
+      "avgActiveDay": 2.8656958550752556,
+      "maxDailyLoss": -22.831201351885383,
+      "maxDailyWin": 44.901783145780286,
+      "maxDrawdown": 76.9713176927318
+    },
+    "relationship": {
+      "unionDays": 68,
+      "overlapDays": 2,
+      "correlationUnionZeroFilled": 0.04377936591108479,
+      "correlationActiveOverlap": 1,
+      "avgNyOnLondonLosingDays": -0.4569992000000691,
+      "avgNyOnLondonWinningDays": 0.5750188888888216,
+      "bothWin": 1,
+      "bothLose": 1,
+      "londonLoseNyWin": 0,
+      "londonWinNyLose": 0
+    }
+  }
+}

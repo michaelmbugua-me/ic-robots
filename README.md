@@ -81,21 +81,27 @@ graph TD
 | Mode | Command | Places orders? | Use case |
 |---|---|---:|---|
 | Monitor only | `npm start` | No | Safest first run. Connects, authenticates, subscribes, prints status/signals. |
-| Auto execute | `npm run auto` | Yes | Places broker/local orders when all strategy, risk, and spread gates pass. |
+| Auto execute | `npm run auto` | Yes for NY; London only if explicitly enabled | Runs NY auto-execution plus the cleaned London monitor profile in one process. |
 | NY Asian monitor profile | `npm run start:ny-asian` | No | Same strategy with explicit environment overrides. |
 | NY Asian auto profile | `npm run auto:ny-asian` | Yes | PM2/Docker-style live execution profile. |
 
 ---
 
-## Current strategy: `ny_asian_continuation`
+## Current strategy modes
 
-The only supported strategy mode in `config.js` is:
+Supported `STRATEGY_MODE` values in `config.js` are:
 
 ```bash
 STRATEGY_MODE=ny_asian_continuation
+STRATEGY_MODE=london_asian_fake_break_reversal
+STRATEGY_MODE=combined_ny_london
 ```
 
-Strategy implementation lives in `indicators.js` and is called by both `index.js` and `backtest-multi.js`.
+`ny_asian_continuation` is the current live-capable strategy. Its implementation lives in `indicators.js` and is called by both `index.js` and `backtest-multi.js`.
+
+`indicators.js` also contains a tested London fake-break generator, `generateLondonAsianFakeBreakReversalSignal()`, for the proposed London module. It is wired into **backtesting only** through `STRATEGY_MODE=london_asian_fake_break_reversal`; live execution in `index.js` intentionally blocks this mode until a later monitor/live phase.
+
+`combined_ny_london` runs both live routers in the same process so account reconciliation, risk gates, trade slots, and local state stay shared. London remains monitor-only unless `LONDON_LIVE_EXECUTION_ENABLED=true` is explicitly set.
 
 ### Strategy logic
 
@@ -140,13 +146,13 @@ Session windows are configured in `config.js` using `SESSION_WINDOW_MODE`.
 | `ny_only` | `12:30–16:00` | NY overlap only. |
 | `ny_quality` | `12:30–16:00` | Same window, alternate profile name for testing. |
 | `ny_trimmed` | `12:45–15:45` | Slightly narrower NY window. |
-| `london_only` | `07:00–10:00` | London open only. Current strategy is still configured to allow NY by default, so update `NY_ASIAN_ALLOWED_SESSIONS` if testing this. |
+| `london_only` | `07:00–10:00` | London open only. Used by London fake-break backtests. |
 | `all_windows` | `07:00–10:00`, `12:30–16:00` | Default in `config.js`; strategy defaults still allow `ny_overlap` only. |
 
 Important distinction:
 
 - `SESSION_WINDOW_MODE` controls when the bot wakes up and evaluates pairs.
-- `NY_ASIAN_ALLOWED_SESSIONS` controls whether the strategy is allowed to trade in a named active window.
+- Strategy-specific allowed-session variables such as `NY_ASIAN_ALLOWED_SESSIONS` and `LONDON_FAKE_BREAK_ALLOWED_SESSIONS` control whether a strategy is allowed to trade in a named active window.
 - By default, `NY_ASIAN_ALLOWED_SESSIONS=ny_overlap`, so London evaluations do not become London trades unless you explicitly change that strategy setting.
 
 ---
@@ -321,13 +327,19 @@ This connects to cTrader, authenticates, reconciles account state, subscribes to
 npm run auto
 ```
 
-Equivalent direct command:
+`npm run auto` uses `STRATEGY_MODE=combined_ny_london` with the NY strategy live-capable and the cleaned London profile enabled for observation:
 
 ```bash
-STRATEGY_MODE=ny_asian_continuation SESSION_WINDOW_MODE=all_windows node index.js --auto-execute
+STRATEGY_MODE=combined_ny_london SESSION_WINDOW_MODE=all_windows \
+LONDON_MONITOR_ENABLED=true \
+LONDON_FAKE_BREAK_TRADE_END_UTC=9 \
+LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS=Wed \
+LONDON_FAKE_BREAK_ALLOWED_PAIRS=EUR_USD,USD_JPY \
+LONDON_MAX_LOSSES_PER_DAY=1 \
+node index.js --auto-execute
 ```
 
-Auto-execute can place broker stop orders or market orders when the strategy, risk, session, quote, and spread gates pass.
+Auto-execute can place broker stop orders or market orders when the strategy, risk, session, quote, and spread gates pass. London signals are logged but not placed unless `LONDON_LIVE_EXECUTION_ENABLED=true` is set.
 
 ### Useful live overrides
 
@@ -403,6 +415,77 @@ Multi-pair NY Asian profile:
 npm run backtest:ny-asian:multi
 ```
 
+London fake-break research/backtest profile:
+
+```bash
+npm run backtest:london-fake-break
+npm run backtest:london-fake-break:multi
+npm run backtest:london-fake-break:usdjpy
+npm run backtest:london-fake-break:eurusd-usdjpy
+npm run backtest:london-fake-break:usdjpy:braked
+npm run backtest:london-fake-break:eurusd-usdjpy:braked
+npm run backtest:london-fake-break:usdjpy:cleaned
+npm run backtest:london-fake-break:eurusd-usdjpy:cleaned
+```
+
+The default London mode tests Candidate B from `LONDON_FAKE_BREAK_IMPLEMENTATION_PLAN.md`:
+
+- London `07:00–10:00 UTC`
+- Tue/Wed/Thu only
+- 4-pip minimum Asian-range break
+- close back inside within 2 M5 bars
+- 5–10 pip risk band
+- stop beyond fake-break extreme
+- TP at the opposite side of the Asian range
+- 12-bar time-exit fallback
+
+Candidate A time-exit scripts are also available for comparison:
+
+```bash
+npm run backtest:london-fake-break:a:multi
+npm run backtest:london-fake-break:a:usdjpy
+npm run backtest:london-fake-break:a:eurusd-usdjpy
+```
+
+Candidate A uses the strongest cross-pair research row:
+
+- 2-pip minimum break
+- close back inside within 3 M5 bars
+- 5–10 pip risk band
+- Tue/Wed/Thu only
+- H1 reversal-aligned / break-counter-H1 filter
+- time-exit target model
+
+Both London profiles are not live-enabled yet.
+
+Phase 5 monitor-only London observation can be started with:
+
+```bash
+npm run start:london-monitor:cleaned
+```
+
+This uses the cleaned research profile:
+
+```text
+TRADING_PAIRS=EUR_USD,USD_JPY
+SESSION_WINDOW_MODE=london_only
+LONDON_MONITOR_ENABLED=true
+LONDON_FAKE_BREAK_TRADE_END_UTC=9
+LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS=Wed
+LONDON_MAX_LOSSES_PER_DAY=1
+```
+
+London live execution is still disabled unless `LONDON_LIVE_EXECUTION_ENABLED=true` is explicitly set; keep it `false` during Phase 5.
+
+Current Phase 3 comparison read:
+
+- Candidate B is stronger than Candidate A in full backtests.
+- Best London-only result so far is Candidate B on `USD_JPY` only.
+- Candidate B on `EUR_USD,USD_JPY` is positive but `EUR_USD` is much weaker than `USD_JPY`.
+- Candidate A time-exit did not survive full backtesting well and should stay research-only for now.
+- If prioritizing total portfolio net, the current London candidate is Candidate B on `EUR_USD,USD_JPY` with `LONDON_MAX_LOSSES_PER_DAY=1`.
+- Diagnostics found `09:00–10:00 UTC` and `EUR_USD` Thursdays were damaging. The latest cleaned backtest also found Tuesday and Thursday weak overall, so `backtest:london-fake-break:eurusd-usdjpy:cleaned` now keeps Candidate B on `EUR_USD,USD_JPY` with `LONDON_FAKE_BREAK_TRADE_END_UTC=9`, `LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS=Wed`, and `LONDON_MAX_LOSSES_PER_DAY=1`.
+
 The backtester:
 
 - loads local `history_*.json` files,
@@ -452,6 +535,108 @@ Example:
 ```bash
 npm run research:regimes -- --pair EUR_USD --file history_EUR_USD.json --cost-pips 0.7
 ```
+
+Phase 1 London fake-break research uses the same runner with additional fake-break tables:
+
+```bash
+npm run research:london-fake-break -- --pair EUR_USD --file history_EUR_USD.json --cost-pips 0.7
+```
+
+Useful research parameters:
+
+```bash
+npm run research:london-fake-break -- \
+  --pair GBP_USD \
+  --file history_GBP_USD.json \
+  --fake-break-min-break-pips 2 \
+  --fake-break-confirm-bars 2 \
+  --fake-break-lookahead-bars 12 \
+  --fake-break-stop-buffer-pips 0.5
+```
+
+Filter-sweep mode ranks combinations before any strategy implementation:
+
+```bash
+npm run research:london-fake-break:sweep -- \
+  --pair EUR_USD \
+  --file history_EUR_USD.json \
+  --cost-pips 0.7 \
+  --min-obs 80 \
+  --sweep-top 20
+```
+
+Sweep dimensions can be overridden with comma-separated values:
+
+```bash
+npm run research:london-fake-break:sweep -- \
+  --pair EUR_USD \
+  --file history_EUR_USD.json \
+  --sweep-min-break-pips 2,3,4,5 \
+  --sweep-confirm-bars 0,1,2,3 \
+  --sweep-risk-bands all,4-8,5-10,6-12,8-15 \
+  --sweep-weekdays all,TueWedThu,Mon,Tue,Wed,Thu,Fri \
+  --sweep-h1 all,break_with_h1,reversal_with_h1,break_counter_h1,reversal_counter_h1 \
+  --sweep-directions all,up,down \
+  --sweep-targets time_exit,asian_midpoint,rr_1_0,rr_1_2,asian_opposite
+```
+
+Compare sweep rows across multiple pairs and rank only filter sets that appear on every pair:
+
+```bash
+npm run research:london-fake-break:compare -- \
+  --pairs EUR_USD,GBP_USD,USD_JPY \
+  --cost-pips 0.7 \
+  --min-obs 80 \
+  --top 20
+```
+
+Any `--sweep-*` option can be passed through to the comparison runner. For example, to compare only fixed/level-based target models:
+
+```bash
+npm run research:london-fake-break:compare -- \
+  --pairs EUR_USD,GBP_USD,USD_JPY \
+  --cost-pips 0.7 \
+  --min-obs 80 \
+  --top 10 \
+  --sweep-targets asian_midpoint,rr_1_0,rr_1_2,asian_opposite
+```
+
+Compare London Candidate B against the current NY module at day level:
+
+```bash
+npm run research:london-ny:correlation
+```
+
+This runs NY-only plus London `USD_JPY` and London `EUR_USD,USD_JPY`, writes outputs under `analysis/`, and simulates simple London module brakes. Current read:
+
+- London `USD_JPY` adds net profit with limited calendar overlap against NY.
+- London `EUR_USD,USD_JPY` adds more net but needs a module brake because drawdown is materially higher.
+- The best tested London brake so far is stopping London after the first same-day London loss.
+- `GBP_USD` remains excluded for London Candidate B.
+- The latest cleaned backtest favors London Candidate B on `EUR_USD,USD_JPY` with `07:00–09:00 UTC`, Wednesday-only entries, and `LONDON_MAX_LOSSES_PER_DAY=1`. This is the current best research profile for London backtest profitability, but it remains monitor-only/backtest-only until the live-monitor phase is implemented.
+
+London diagnostics by pair, weekday, hour, break direction, risk band, and exit reason:
+
+```bash
+npm run research:london:diagnostics
+```
+
+This writes `analysis/london_diagnostics.json`.
+
+Selected combined research profile:
+
+```bash
+npm run research:combined:selected
+```
+
+This reruns the NY/London correlation analysis, extracts the selected row `london_eurusd_usdjpy_cleaned + max_1_loss`, and writes `analysis/selected_combined_profile.md`.
+
+It also writes `analysis/selected_combined_profile.json` with combined trade-level metrics:
+
+- combined win rate,
+- combined profit factor,
+- combined max consecutive losses,
+- monthly distribution of combined profits.
 
 ---
 
@@ -534,7 +719,7 @@ Most values are configured in `config.js`; many can be overridden with environme
 | Variable | Default | Notes |
 |---|---|---|
 | `TRADING_PAIRS` | `EUR_USD,GBP_USD,USD_JPY` | Comma-separated pair list. Must have symbol IDs in `config.ctraderSymbolIds`. |
-| `STRATEGY_MODE` | `ny_asian_continuation` | Only supported mode. |
+| `STRATEGY_MODE` | `ny_asian_continuation` | `ny_asian_continuation` is live-capable; `combined_ny_london` runs NY plus London monitor routing; `london_asian_fake_break_reversal` can be observed alone. |
 | `SESSION_WINDOW_MODE` | `all_windows` | One of `ny_only`, `ny_quality`, `ny_trimmed`, `london_only`, `all_windows`. |
 | `NY_ASIAN_ALLOWED_SESSIONS` | `ny_overlap` | Comma-separated session names allowed by the strategy. |
 | `NY_ASIAN_START_UTC` | `0` | Asian range start. |
@@ -554,6 +739,20 @@ Most values are configured in `config.js`; many can be overridden with environme
 | `NY_ASIAN_TIME_EXIT_BARS` | `12` | Trade time exit in bars. |
 | `NY_ASIAN_MAX_TRADES_PER_SESSION` | `1` | Per-pair/per-session setup count. |
 | `NY_ASIAN_LOOKBACK_CANDLES` | `220` | M5 lookback for live strategy context. |
+| `LONDON_FAKE_BREAK_ALLOWED_SESSIONS` | `london_open` | Session names allowed by London fake-break backtests. |
+| `LONDON_FAKE_BREAK_ALLOWED_PAIRS` | empty | Optional London pair filter; `npm run auto` sets `EUR_USD,USD_JPY`. |
+| `LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS` | `Tue,Wed,Thu` | Candidate B weekday filter. |
+| `LONDON_FAKE_BREAK_EXCLUDED_PAIR_WEEKDAYS` | empty | Optional `PAIR:Day` exclusions, e.g. `EUR_USD:Thu`. |
+| `LONDON_FAKE_BREAK_TRADE_START_UTC` | `7.0` | London fake-break trade window start. |
+| `LONDON_FAKE_BREAK_TRADE_END_UTC` | `10.0` | London fake-break trade window end. |
+| `LONDON_FAKE_BREAK_MIN_BREAK_PIPS` | `4.0` | Minimum Asian-range break for Candidate B. |
+| `LONDON_FAKE_BREAK_CONFIRM_BARS` | `2` | Bars allowed to close back inside the Asian range. |
+| `LONDON_FAKE_BREAK_MIN_RISK_PIPS` | `5` | Minimum stop distance. |
+| `LONDON_FAKE_BREAK_MAX_RISK_PIPS` | `10` | Maximum stop distance. |
+| `LONDON_FAKE_BREAK_TARGET_MODE` | `asian_opposite` | Candidate B target model. |
+| `LONDON_FAKE_BREAK_TIME_EXIT_BARS` | `12` | Time-exit fallback used by the backtester. |
+| `LONDON_MAX_LOSSES_PER_DAY` | `0` | London module brake; `1` stops London after the first same-day London loss. |
+| `LONDON_MAX_DAILY_LOSS_USD` | `0` | Optional London module daily USD loss brake; `0` disables. |
 | `COOLDOWN_CANDLES_AFTER_LOSS` | `1` | Per-pair cooldown after SL. |
 
 ### Execution and API throttling
@@ -667,4 +866,3 @@ Before using `--auto-execute`:
 - [ ] `config.ctraderSymbolIds` matches your cTrader account.
 - [ ] `RISK_PER_TRADE_PERCENT`, daily gates, and max-trade caps are acceptable.
 - [ ] You understand that `npm run auto`, PM2, and Docker auto-execute commands can place real orders if `CTRADER_ENV=live` and live account credentials are used.
-

@@ -1,0 +1,3156 @@
+{
+  "generatedAtUTC": "2026-05-28T10:37:35.863Z",
+  "assumptions": {
+    "londonRiskFactor": 0.25,
+    "asianRangeFilter": {
+      "minPips": 15,
+      "maxPips": 60
+    }
+  },
+  "results": [
+    {
+      "key": "ny_only",
+      "label": "NY only",
+      "notes": "Benchmark; no London trades included.",
+      "env": {
+        "TRADING_PAIRS": "EUR_USD,GBP_USD,USD_JPY",
+        "STRATEGY_MODE": "ny_asian_continuation",
+        "SESSION_WINDOW_MODE": "all_windows"
+      },
+      "combinedTradeStats": {
+        "trades": 88,
+        "wins": 65,
+        "losses": 23,
+        "winRate": 73.86363636363636,
+        "grossProfit": 623.3100465959639,
+        "grossLoss": 263.7718587199983,
+        "net": 359.53818787596543,
+        "profitFactor": 2.363064997231665,
+        "expectancy": 4.085661225863244,
+        "maxConsecutiveLosses": 2
+      },
+      "combinedDaily": {
+        "activeDays": 85,
+        "greenDays": 62,
+        "redDays": 23,
+        "net": 359.53818787596543,
+        "avgActiveDay": 4.229861033834887,
+        "activeDayStdDev": 9.60642639378858,
+        "activeDaySharpe": 0.44031576992770943,
+        "maxDailyLoss": -11.978165061272197,
+        "maxDailyWin": 20.670720000000447,
+        "maxDrawdown": 25.23486135118325
+      },
+      "monthlyDistribution": [
+        {
+          "month": "2022-03",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.80405999999999,
+          "winRate": 0
+        },
+        {
+          "month": "2022-04",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -13.430801351183261,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2022-05",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 20.280280000000417,
+          "winRate": 100
+        },
+        {
+          "month": "2022-06",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -1.230479842070869,
+          "winRate": 50
+        },
+        {
+          "month": "2022-08",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 7.723929679042133,
+          "winRate": 60
+        },
+        {
+          "month": "2022-09",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 19.209010000001754,
+          "winRate": 100
+        },
+        {
+          "month": "2022-10",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 10.161351839006823,
+          "winRate": 100
+        },
+        {
+          "month": "2022-12",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 19.69724715559248,
+          "winRate": 75
+        },
+        {
+          "month": "2023-01",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 19.875520000002222,
+          "winRate": 100
+        },
+        {
+          "month": "2023-02",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -10.96853798685473,
+          "winRate": 0
+        },
+        {
+          "month": "2023-03",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 7.418564121395178,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2023-04",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 19.094037920154456,
+          "winRate": 75
+        },
+        {
+          "month": "2023-05",
+          "trades": 4,
+          "wins": 2,
+          "losses": 2,
+          "net": -3.6640200000051752,
+          "winRate": 50
+        },
+        {
+          "month": "2023-07",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 10.0713669459932,
+          "winRate": 100
+        },
+        {
+          "month": "2023-08",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 10.054398025236168,
+          "winRate": 100
+        },
+        {
+          "month": "2023-09",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -21.704610000000834,
+          "winRate": 0
+        },
+        {
+          "month": "2023-10",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.843200000002229,
+          "winRate": 100
+        },
+        {
+          "month": "2023-11",
+          "trades": 4,
+          "wins": 4,
+          "losses": 0,
+          "net": 40.03056999999925,
+          "winRate": 100
+        },
+        {
+          "month": "2023-12",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 8.88985946008056,
+          "winRate": 100
+        },
+        {
+          "month": "2024-01",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 3.7725854333044926,
+          "winRate": 100
+        },
+        {
+          "month": "2024-02",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -1.5340748330957368,
+          "winRate": 50
+        },
+        {
+          "month": "2024-04",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 7.613100000001281,
+          "winRate": 100
+        },
+        {
+          "month": "2024-05",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 20.316443014033638,
+          "winRate": 100
+        },
+        {
+          "month": "2024-06",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.94664273215743,
+          "winRate": 100
+        },
+        {
+          "month": "2024-07",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.969369999999229,
+          "winRate": 0
+        },
+        {
+          "month": "2024-08",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 30.203079366997585,
+          "winRate": 100
+        },
+        {
+          "month": "2024-09",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 10.50495999999999,
+          "winRate": 100
+        },
+        {
+          "month": "2024-11",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 18.21991599113707,
+          "winRate": 100
+        },
+        {
+          "month": "2024-12",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -1.1711898179422455,
+          "winRate": 50
+        },
+        {
+          "month": "2025-02",
+          "trades": 4,
+          "wins": 4,
+          "losses": 0,
+          "net": 39.21972874484216,
+          "winRate": 100
+        },
+        {
+          "month": "2025-03",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 19.373630000004233,
+          "winRate": 100
+        },
+        {
+          "month": "2025-04",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 1.267549938729136,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-05",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 8.985104580230908,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-06",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 18.999080000001605,
+          "winRate": 100
+        },
+        {
+          "month": "2025-07",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 28.90485957694505,
+          "winRate": 100
+        },
+        {
+          "month": "2025-08",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.738487566917184,
+          "winRate": 0
+        },
+        {
+          "month": "2025-09",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.925760000000466,
+          "winRate": 0
+        },
+        {
+          "month": "2025-10",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -1.492700000000026,
+          "winRate": 50
+        },
+        {
+          "month": "2025-11",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.97052999999912,
+          "winRate": 100
+        },
+        {
+          "month": "2026-01",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 28.59868177814505,
+          "winRate": 100
+        },
+        {
+          "month": "2026-03",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 5.55845499999966,
+          "winRate": 100
+        },
+        {
+          "month": "2026-04",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.320882028999588,
+          "winRate": 0
+        },
+        {
+          "month": "2026-05",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.689479999999564,
+          "winRate": 100
+        }
+      ]
+    },
+    {
+      "key": "london_25_base",
+      "label": "NY + London 25%",
+      "notes": "Current cleaned London profile, scaled to 25% risk in the combined portfolio.",
+      "env": {
+        "TRADING_PAIRS": "EUR_USD,USD_JPY",
+        "STRATEGY_MODE": "london_asian_fake_break_reversal",
+        "SESSION_WINDOW_MODE": "london_only",
+        "LONDON_FAKE_BREAK_PROFILE": "candidate_b",
+        "LONDON_FAKE_BREAK_TRADE_END_UTC": "9",
+        "LONDON_FAKE_BREAK_EXCLUDED_PAIR_WEEKDAYS": "EUR_USD:Thu",
+        "LONDON_MAX_LOSSES_PER_DAY": "1"
+      },
+      "londonRawSummary": {
+        "total": 116,
+        "wins": 53,
+        "losses": 63,
+        "winRate": "45.7",
+        "netProfit": 266.5152630053203,
+        "finalBalance": 2204.4997591293513,
+        "dailyRiskSimulation": {
+          "blockedDays": 6,
+          "blockedSignals": 0,
+          "blockedPendingTriggers": 0
+        }
+      },
+      "londonTradeStats": {
+        "trades": 116,
+        "wins": 53,
+        "losses": 63,
+        "winRate": 45.689655172413794,
+        "grossProfit": 228.35639214739479,
+        "grossLoss": 161.72757639606434,
+        "net": 66.62881575133046,
+        "profitFactor": 1.411981785890114,
+        "expectancy": 0.5743863426838833,
+        "maxConsecutiveLosses": 5
+      },
+      "londonDaily": {
+        "activeDays": 113,
+        "greenDays": 52,
+        "redDays": 61,
+        "net": 66.62881575133046,
+        "avgActiveDay": 0.5896355376223935,
+        "activeDayStdDev": 4.139055697525912,
+        "activeDaySharpe": 0.1424565361550567,
+        "maxDailyLoss": -5.497417501125938,
+        "maxDailyWin": 11.25850447793025,
+        "maxDrawdown": 24.228385552923115
+      },
+      "combinedTradeStats": {
+        "trades": 204,
+        "wins": 118,
+        "losses": 86,
+        "winRate": 57.84313725490197,
+        "grossProfit": 851.6664387433586,
+        "grossLoss": 425.49943511606256,
+        "net": 426.1670036272958,
+        "profitFactor": 2.0015689057520167,
+        "expectancy": 2.089053939349489,
+        "maxConsecutiveLosses": 4
+      },
+      "combinedDaily": {
+        "activeDays": 191,
+        "greenDays": 112,
+        "redDays": 79,
+        "net": 426.1670036272958,
+        "avgActiveDay": 2.2312408566874127,
+        "activeDayStdDev": 7.420004457317887,
+        "activeDaySharpe": 0.3007061342782455,
+        "maxDailyLoss": -14.276535337972643,
+        "maxDailyWin": 20.670720000000447,
+        "maxDrawdown": 27.566764217695095
+      },
+      "monthlyDistribution": [
+        {
+          "month": "2022-03",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -6.28564939066967,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2022-04",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": -0.32077062325276806,
+          "winRate": 60
+        },
+        {
+          "month": "2022-05",
+          "trades": 6,
+          "wins": 4,
+          "losses": 2,
+          "net": 26.35197773406682,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2022-06",
+          "trades": 4,
+          "wins": 2,
+          "losses": 2,
+          "net": -1.2119244335136319,
+          "winRate": 50
+        },
+        {
+          "month": "2022-07",
+          "trades": 3,
+          "wins": 0,
+          "losses": 3,
+          "net": -8.070284991772898,
+          "winRate": 0
+        },
+        {
+          "month": "2022-08",
+          "trades": 9,
+          "wins": 5,
+          "losses": 4,
+          "net": 3.999161811927838,
+          "winRate": 55.55555555555556
+        },
+        {
+          "month": "2022-09",
+          "trades": 5,
+          "wins": 4,
+          "losses": 1,
+          "net": 24.324825000002207,
+          "winRate": 80
+        },
+        {
+          "month": "2022-10",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 12.620916301108428,
+          "winRate": 75
+        },
+        {
+          "month": "2022-11",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -2.7269967056288986,
+          "winRate": 0
+        },
+        {
+          "month": "2022-12",
+          "trades": 8,
+          "wins": 5,
+          "losses": 3,
+          "net": 24.585295053758436,
+          "winRate": 62.5
+        },
+        {
+          "month": "2023-01",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 25.38586000000213,
+          "winRate": 100
+        },
+        {
+          "month": "2023-02",
+          "trades": 4,
+          "wins": 0,
+          "losses": 4,
+          "net": -17.016652196158244,
+          "winRate": 0
+        },
+        {
+          "month": "2023-03",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 7.962465371395869,
+          "winRate": 60
+        },
+        {
+          "month": "2023-04",
+          "trades": 9,
+          "wins": 6,
+          "losses": 3,
+          "net": 27.893077962700513,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2023-05",
+          "trades": 9,
+          "wins": 5,
+          "losses": 4,
+          "net": 0.8148655828843827,
+          "winRate": 55.55555555555556
+        },
+        {
+          "month": "2023-06",
+          "trades": 5,
+          "wins": 1,
+          "losses": 4,
+          "net": -4.525813224251525,
+          "winRate": 20
+        },
+        {
+          "month": "2023-07",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 21.047320109329576,
+          "winRate": 100
+        },
+        {
+          "month": "2023-08",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": 6.778535500160512,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2023-09",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -17.783503147711773,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2023-10",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 8.205356309923499,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2023-11",
+          "trades": 7,
+          "wins": 6,
+          "losses": 1,
+          "net": 40.09169416019422,
+          "winRate": 85.71428571428571
+        },
+        {
+          "month": "2023-12",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 17.961878126790236,
+          "winRate": 75
+        },
+        {
+          "month": "2024-01",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 12.543079003000113,
+          "winRate": 75
+        },
+        {
+          "month": "2024-02",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -4.316151478382917,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2024-04",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 7.613100000001281,
+          "winRate": 100
+        },
+        {
+          "month": "2024-05",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 21.33968551403364,
+          "winRate": 100
+        },
+        {
+          "month": "2024-06",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.94664273215743,
+          "winRate": 100
+        },
+        {
+          "month": "2024-07",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -11.455402499999664,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2024-08",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 30.203079366997585,
+          "winRate": 100
+        },
+        {
+          "month": "2024-09",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 12.95574500000008,
+          "winRate": 100
+        },
+        {
+          "month": "2024-10",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -2.7688216110210924,
+          "winRate": 0
+        },
+        {
+          "month": "2024-11",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 15.293163553652652,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2024-12",
+          "trades": 5,
+          "wins": 1,
+          "losses": 4,
+          "net": -7.313141320248535,
+          "winRate": 20
+        },
+        {
+          "month": "2025-01",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 1.529358891510002,
+          "winRate": 50
+        },
+        {
+          "month": "2025-02",
+          "trades": 5,
+          "wins": 5,
+          "losses": 0,
+          "net": 50.44517453128722,
+          "winRate": 100
+        },
+        {
+          "month": "2025-03",
+          "trades": 6,
+          "wins": 4,
+          "losses": 2,
+          "net": 28.12254741602353,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-04",
+          "trades": 6,
+          "wins": 3,
+          "losses": 3,
+          "net": 0.08402577260780575,
+          "winRate": 50
+        },
+        {
+          "month": "2025-05",
+          "trades": 8,
+          "wins": 3,
+          "losses": 5,
+          "net": -1.44389912941931,
+          "winRate": 37.5
+        },
+        {
+          "month": "2025-06",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 13.522435317080344,
+          "winRate": 60
+        },
+        {
+          "month": "2025-07",
+          "trades": 8,
+          "wins": 6,
+          "losses": 2,
+          "net": 40.23611297880608,
+          "winRate": 75
+        },
+        {
+          "month": "2025-08",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -8.584184676570455,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2025-09",
+          "trades": 3,
+          "wins": 0,
+          "losses": 3,
+          "net": -17.777535791125487,
+          "winRate": 0
+        },
+        {
+          "month": "2025-10",
+          "trades": 5,
+          "wins": 2,
+          "losses": 3,
+          "net": -1.2050437499991116,
+          "winRate": 40
+        },
+        {
+          "month": "2025-11",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 11.05815308020033,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-12",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 0.25649486367347407,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2026-01",
+          "trades": 7,
+          "wins": 6,
+          "losses": 1,
+          "net": 40.25578569419143,
+          "winRate": 85.71428571428571
+        },
+        {
+          "month": "2026-03",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 2.885574999999318,
+          "winRate": 50
+        },
+        {
+          "month": "2026-04",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -14.158045631415675,
+          "winRate": 0
+        },
+        {
+          "month": "2026-05",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 6.817436488970632,
+          "winRate": 50
+        }
+      ]
+    },
+    {
+      "key": "london_25_no_thursday",
+      "label": "NY + London 25% + no Thursday",
+      "notes": "Excludes all Thursday London trades, not only EUR_USD Thursday.",
+      "env": {
+        "TRADING_PAIRS": "EUR_USD,USD_JPY",
+        "STRATEGY_MODE": "london_asian_fake_break_reversal",
+        "SESSION_WINDOW_MODE": "london_only",
+        "LONDON_FAKE_BREAK_PROFILE": "candidate_b",
+        "LONDON_FAKE_BREAK_TRADE_END_UTC": "9",
+        "LONDON_FAKE_BREAK_EXCLUDED_PAIR_WEEKDAYS": "EUR_USD:Thu",
+        "LONDON_MAX_LOSSES_PER_DAY": "1",
+        "LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS": "Tue,Wed"
+      },
+      "londonRawSummary": {
+        "total": 93,
+        "wins": 43,
+        "losses": 50,
+        "winRate": "46.2",
+        "netProfit": 243.67846144916894,
+        "finalBalance": 2181.6629575732,
+        "dailyRiskSimulation": {
+          "blockedDays": 4,
+          "blockedSignals": 0,
+          "blockedPendingTriggers": 0
+        }
+      },
+      "londonTradeStats": {
+        "trades": 93,
+        "wins": 43,
+        "losses": 50,
+        "winRate": 46.236559139784944,
+        "grossProfit": 188.81790808144027,
+        "grossLoss": 127.89829271914773,
+        "net": 60.919615362292525,
+        "profitFactor": 1.4763129676489593,
+        "expectancy": 0.6550496275515325,
+        "maxConsecutiveLosses": 6
+      },
+      "londonDaily": {
+        "activeDays": 90,
+        "greenDays": 42,
+        "redDays": 48,
+        "net": 60.919615362292525,
+        "avgActiveDay": 0.6768846151365836,
+        "activeDayStdDev": 4.135616549340753,
+        "activeDaySharpe": 0.16367199595535128,
+        "maxDailyLoss": -5.497417501125938,
+        "maxDailyWin": 11.225445786445071,
+        "maxDrawdown": 16.77805223446159
+      },
+      "combinedTradeStats": {
+        "trades": 181,
+        "wins": 108,
+        "losses": 73,
+        "winRate": 59.66850828729282,
+        "grossProfit": 812.1279546774041,
+        "grossLoss": 391.670151439146,
+        "net": 420.45780323825795,
+        "profitFactor": 2.0734997336236503,
+        "expectancy": 2.32297128860916,
+        "maxConsecutiveLosses": 4
+      },
+      "combinedDaily": {
+        "activeDays": 170,
+        "greenDays": 103,
+        "redDays": 67,
+        "net": 420.4578032382579,
+        "avgActiveDay": 2.473281195519164,
+        "activeDayStdDev": 7.666140488081072,
+        "activeDaySharpe": 0.32262403739724005,
+        "maxDailyLoss": -14.276535337972643,
+        "maxDailyWin": 20.670720000000447,
+        "maxDrawdown": 25.122644343362044
+      },
+      "monthlyDistribution": [
+        {
+          "month": "2022-03",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -6.28564939066967,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2022-04",
+          "trades": 4,
+          "wins": 2,
+          "losses": 2,
+          "net": -11.579275101183018,
+          "winRate": 50
+        },
+        {
+          "month": "2022-05",
+          "trades": 5,
+          "wins": 4,
+          "losses": 1,
+          "net": 29.099194424854957,
+          "winRate": 80
+        },
+        {
+          "month": "2022-06",
+          "trades": 4,
+          "wins": 2,
+          "losses": 2,
+          "net": -1.2119244335136319,
+          "winRate": 50
+        },
+        {
+          "month": "2022-07",
+          "trades": 3,
+          "wins": 0,
+          "losses": 3,
+          "net": -8.070284991772898,
+          "winRate": 0
+        },
+        {
+          "month": "2022-08",
+          "trades": 7,
+          "wins": 4,
+          "losses": 3,
+          "net": 6.062149708237296,
+          "winRate": 57.14285714285714
+        },
+        {
+          "month": "2022-09",
+          "trades": 5,
+          "wins": 4,
+          "losses": 1,
+          "net": 24.324825000002207,
+          "winRate": 80
+        },
+        {
+          "month": "2022-10",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 15.34746577375385,
+          "winRate": 100
+        },
+        {
+          "month": "2022-11",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -2.7269967056288986,
+          "winRate": 0
+        },
+        {
+          "month": "2022-12",
+          "trades": 8,
+          "wins": 5,
+          "losses": 3,
+          "net": 24.585295053758436,
+          "winRate": 62.5
+        },
+        {
+          "month": "2023-01",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 25.38586000000213,
+          "winRate": 100
+        },
+        {
+          "month": "2023-02",
+          "trades": 3,
+          "wins": 0,
+          "losses": 3,
+          "net": -14.253803870391629,
+          "winRate": 0
+        },
+        {
+          "month": "2023-03",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 7.962465371395869,
+          "winRate": 60
+        },
+        {
+          "month": "2023-04",
+          "trades": 8,
+          "wins": 5,
+          "losses": 3,
+          "net": 26.731017377307104,
+          "winRate": 62.5
+        },
+        {
+          "month": "2023-05",
+          "trades": 9,
+          "wins": 5,
+          "losses": 4,
+          "net": 0.8148655828843827,
+          "winRate": 55.55555555555556
+        },
+        {
+          "month": "2023-06",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -1.3577117027617915,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2023-07",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 10.0713669459932,
+          "winRate": 100
+        },
+        {
+          "month": "2023-08",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": 6.778535500160512,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2023-09",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -21.704610000000834,
+          "winRate": 0
+        },
+        {
+          "month": "2023-10",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 8.205356309923499,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2023-11",
+          "trades": 6,
+          "wins": 5,
+          "losses": 1,
+          "net": 38.23319102417348,
+          "winRate": 83.33333333333334
+        },
+        {
+          "month": "2023-12",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 17.961878126790236,
+          "winRate": 75
+        },
+        {
+          "month": "2024-01",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 12.543079003000113,
+          "winRate": 75
+        },
+        {
+          "month": "2024-02",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -1.5340748330957368,
+          "winRate": 50
+        },
+        {
+          "month": "2024-04",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 7.613100000001281,
+          "winRate": 100
+        },
+        {
+          "month": "2024-05",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 21.33968551403364,
+          "winRate": 100
+        },
+        {
+          "month": "2024-06",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.94664273215743,
+          "winRate": 100
+        },
+        {
+          "month": "2024-07",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -11.455402499999664,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2024-08",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 30.203079366997585,
+          "winRate": 100
+        },
+        {
+          "month": "2024-09",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 12.95574500000008,
+          "winRate": 100
+        },
+        {
+          "month": "2024-10",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -2.7688216110210924,
+          "winRate": 0
+        },
+        {
+          "month": "2024-11",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 15.293163553652652,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2024-12",
+          "trades": 5,
+          "wins": 1,
+          "losses": 4,
+          "net": -7.313141320248535,
+          "winRate": 20
+        },
+        {
+          "month": "2025-01",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 1.529358891510002,
+          "winRate": 50
+        },
+        {
+          "month": "2025-02",
+          "trades": 5,
+          "wins": 5,
+          "losses": 0,
+          "net": 50.44517453128722,
+          "winRate": 100
+        },
+        {
+          "month": "2025-03",
+          "trades": 6,
+          "wins": 4,
+          "losses": 2,
+          "net": 28.12254741602353,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-04",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 5.624577438729119,
+          "winRate": 75
+        },
+        {
+          "month": "2025-05",
+          "trades": 7,
+          "wins": 3,
+          "losses": 4,
+          "net": 1.310454281128397,
+          "winRate": 42.857142857142854
+        },
+        {
+          "month": "2025-06",
+          "trades": 4,
+          "wins": 2,
+          "losses": 2,
+          "net": 13.361588558873201,
+          "winRate": 50
+        },
+        {
+          "month": "2025-07",
+          "trades": 7,
+          "wins": 5,
+          "losses": 2,
+          "net": 37.956468960127566,
+          "winRate": 71.42857142857143
+        },
+        {
+          "month": "2025-08",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -8.584184676570455,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2025-09",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -14.813650673432246,
+          "winRate": 0
+        },
+        {
+          "month": "2025-10",
+          "trades": 5,
+          "wins": 2,
+          "losses": 3,
+          "net": -1.2050437499991116,
+          "winRate": 40
+        },
+        {
+          "month": "2025-11",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 13.836029999999708,
+          "winRate": 100
+        },
+        {
+          "month": "2025-12",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 0.25649486367347407,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2026-01",
+          "trades": 5,
+          "wins": 4,
+          "losses": 1,
+          "net": 33.03959302814473,
+          "winRate": 80
+        },
+        {
+          "month": "2026-03",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 2.885574999999318,
+          "winRate": 50
+        },
+        {
+          "month": "2026-04",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.320882028999588,
+          "winRate": 0
+        },
+        {
+          "month": "2026-05",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 6.817436488970632,
+          "winRate": 50
+        }
+      ]
+    },
+    {
+      "key": "london_25_wednesday_only",
+      "label": "NY + London 25% + Wednesday only",
+      "notes": "Keeps only Wednesday London setups.",
+      "env": {
+        "TRADING_PAIRS": "EUR_USD,USD_JPY",
+        "STRATEGY_MODE": "london_asian_fake_break_reversal",
+        "SESSION_WINDOW_MODE": "london_only",
+        "LONDON_FAKE_BREAK_PROFILE": "candidate_b",
+        "LONDON_FAKE_BREAK_TRADE_END_UTC": "9",
+        "LONDON_FAKE_BREAK_EXCLUDED_PAIR_WEEKDAYS": "EUR_USD:Thu",
+        "LONDON_MAX_LOSSES_PER_DAY": "1",
+        "LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS": "Wed"
+      },
+      "londonRawSummary": {
+        "total": 48,
+        "wins": 25,
+        "losses": 23,
+        "winRate": "52.1",
+        "netProfit": 213.74330137004426,
+        "finalBalance": 2151.7277974940753,
+        "dailyRiskSimulation": {
+          "blockedDays": 3,
+          "blockedSignals": 0,
+          "blockedPendingTriggers": 0
+        }
+      },
+      "londonTradeStats": {
+        "trades": 48,
+        "wins": 25,
+        "losses": 23,
+        "winRate": 52.083333333333336,
+        "grossProfit": 110.46756893909496,
+        "grossLoss": 57.03174359658391,
+        "net": 53.43582534251103,
+        "profitFactor": 1.9369488283663794,
+        "expectancy": 1.1132463613023131,
+        "maxConsecutiveLosses": 5
+      },
+      "londonDaily": {
+        "activeDays": 46,
+        "greenDays": 24,
+        "redDays": 22,
+        "net": 53.43582534251103,
+        "avgActiveDay": 1.1616483770111095,
+        "activeDayStdDev": 4.09132892348441,
+        "activeDaySharpe": 0.2839293536980603,
+        "maxDailyLoss": -2.926752437484419,
+        "maxDailyWin": 11.078396127412763,
+        "maxDrawdown": 13.696993333215826
+      },
+      "combinedTradeStats": {
+        "trades": 136,
+        "wins": 90,
+        "losses": 46,
+        "winRate": 66.17647058823529,
+        "grossProfit": 733.7776155350589,
+        "grossLoss": 320.8036023165822,
+        "net": 412.9740132184765,
+        "profitFactor": 2.2873110221840243,
+        "expectancy": 3.0365736266064447,
+        "maxConsecutiveLosses": 4
+      },
+      "combinedDaily": {
+        "activeDays": 128,
+        "greenDays": 85,
+        "redDays": 43,
+        "net": 412.9740132184765,
+        "avgActiveDay": 3.2263594782693477,
+        "activeDayStdDev": 8.36347517105603,
+        "activeDaySharpe": 0.3857678073147152,
+        "maxDailyLoss": -14.065614343362427,
+        "maxDailyWin": 20.670720000000447,
+        "maxDrawdown": 27.820944343362175
+      },
+      "monthlyDistribution": [
+        {
+          "month": "2022-03",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.80405999999999,
+          "winRate": 0
+        },
+        {
+          "month": "2022-04",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -13.43080135118326,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2022-05",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 23.67695734283268,
+          "winRate": 75
+        },
+        {
+          "month": "2022-06",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -4.093623183513822,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2022-07",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -5.418544991772946,
+          "winRate": 0
+        },
+        {
+          "month": "2022-08",
+          "trades": 6,
+          "wins": 3,
+          "losses": 3,
+          "net": 5.0069246790423385,
+          "winRate": 50
+        },
+        {
+          "month": "2022-09",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 16.51071000000162,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2022-10",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 11.46717683900678,
+          "winRate": 100
+        },
+        {
+          "month": "2022-12",
+          "trades": 7,
+          "wins": 5,
+          "losses": 2,
+          "net": 27.273435053758483,
+          "winRate": 71.42857142857143
+        },
+        {
+          "month": "2023-01",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 19.875520000002222,
+          "winRate": 100
+        },
+        {
+          "month": "2023-02",
+          "trades": 3,
+          "wins": 0,
+          "losses": 3,
+          "net": -14.253803870391629,
+          "winRate": 0
+        },
+        {
+          "month": "2023-03",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 7.962465371395869,
+          "winRate": 60
+        },
+        {
+          "month": "2023-04",
+          "trades": 6,
+          "wins": 5,
+          "losses": 1,
+          "net": 32.228434878433035,
+          "winRate": 83.33333333333334
+        },
+        {
+          "month": "2023-05",
+          "trades": 8,
+          "wins": 5,
+          "losses": 3,
+          "net": 3.608646842682597,
+          "winRate": 62.5
+        },
+        {
+          "month": "2023-06",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 4.11024375000027,
+          "winRate": 100
+        },
+        {
+          "month": "2023-07",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 10.0713669459932,
+          "winRate": 100
+        },
+        {
+          "month": "2023-08",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": 6.778535500160512,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2023-09",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -21.704610000000834,
+          "winRate": 0
+        },
+        {
+          "month": "2023-10",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.843200000002229,
+          "winRate": 100
+        },
+        {
+          "month": "2023-11",
+          "trades": 6,
+          "wins": 5,
+          "losses": 1,
+          "net": 38.23319102417348,
+          "winRate": 83.33333333333334
+        },
+        {
+          "month": "2023-12",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 12.836651960081163,
+          "winRate": 100
+        },
+        {
+          "month": "2024-01",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 0.9440680703235751,
+          "winRate": 50
+        },
+        {
+          "month": "2024-02",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -1.5340748330957368,
+          "winRate": 50
+        },
+        {
+          "month": "2024-04",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 7.613100000001281,
+          "winRate": 100
+        },
+        {
+          "month": "2024-05",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 21.33968551403364,
+          "winRate": 100
+        },
+        {
+          "month": "2024-06",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.94664273215743,
+          "winRate": 100
+        },
+        {
+          "month": "2024-07",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -8.621692499999135,
+          "winRate": 50
+        },
+        {
+          "month": "2024-08",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 30.203079366997585,
+          "winRate": 100
+        },
+        {
+          "month": "2024-09",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 10.50495999999999,
+          "winRate": 100
+        },
+        {
+          "month": "2024-10",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -2.7688216110210924,
+          "winRate": 0
+        },
+        {
+          "month": "2024-11",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 15.293163553652652,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2024-12",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -1.814147317941962,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2025-01",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 1.529358891510002,
+          "winRate": 50
+        },
+        {
+          "month": "2025-02",
+          "trades": 4,
+          "wins": 4,
+          "losses": 0,
+          "net": 39.21972874484216,
+          "winRate": 100
+        },
+        {
+          "month": "2025-03",
+          "trades": 4,
+          "wins": 4,
+          "losses": 0,
+          "net": 33.61225241602405,
+          "winRate": 100
+        },
+        {
+          "month": "2025-04",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 5.624577438729119,
+          "winRate": 75
+        },
+        {
+          "month": "2025-05",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 8.985104580230908,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-06",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 18.999080000001605,
+          "winRate": 100
+        },
+        {
+          "month": "2025-07",
+          "trades": 6,
+          "wins": 5,
+          "losses": 1,
+          "net": 38.6401939601279,
+          "winRate": 83.33333333333334
+        },
+        {
+          "month": "2025-08",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.738487566917184,
+          "winRate": 0
+        },
+        {
+          "month": "2025-09",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.925760000000466,
+          "winRate": 0
+        },
+        {
+          "month": "2025-10",
+          "trades": 4,
+          "wins": 2,
+          "losses": 2,
+          "net": 1.5287512500005338,
+          "winRate": 50
+        },
+        {
+          "month": "2025-11",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 13.836029999999708,
+          "winRate": 100
+        },
+        {
+          "month": "2025-12",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 2.850963750000282,
+          "winRate": 100
+        },
+        {
+          "month": "2026-01",
+          "trades": 4,
+          "wins": 4,
+          "losses": 0,
+          "net": 33.54611052814534,
+          "winRate": 100
+        },
+        {
+          "month": "2026-03",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 2.885574999999318,
+          "winRate": 50
+        },
+        {
+          "month": "2026-04",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.320882028999588,
+          "winRate": 0
+        },
+        {
+          "month": "2026-05",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 6.817436488970632,
+          "winRate": 50
+        }
+      ]
+    },
+    {
+      "key": "london_25_trend_no_fade",
+      "label": "NY + London 25% + trend no-fade filter",
+      "notes": "Blocks fake-break reversals when the Asian-range break is aligned with H1 trend.",
+      "env": {
+        "TRADING_PAIRS": "EUR_USD,USD_JPY",
+        "STRATEGY_MODE": "london_asian_fake_break_reversal",
+        "SESSION_WINDOW_MODE": "london_only",
+        "LONDON_FAKE_BREAK_PROFILE": "candidate_b",
+        "LONDON_FAKE_BREAK_TRADE_END_UTC": "9",
+        "LONDON_FAKE_BREAK_EXCLUDED_PAIR_WEEKDAYS": "EUR_USD:Thu",
+        "LONDON_MAX_LOSSES_PER_DAY": "1",
+        "LONDON_FAKE_BREAK_NO_FADE_H1_ALIGNED": "true"
+      },
+      "londonRawSummary": {
+        "total": 55,
+        "wins": 26,
+        "losses": 29,
+        "winRate": "47.3",
+        "netProfit": 106.22580160855318,
+        "finalBalance": 2044.2102977325842,
+        "dailyRiskSimulation": {
+          "blockedDays": 3,
+          "blockedSignals": 0,
+          "blockedPendingTriggers": 0
+        }
+      },
+      "londonTradeStats": {
+        "trades": 55,
+        "wins": 26,
+        "losses": 29,
+        "winRate": 47.27272727272727,
+        "grossProfit": 102.52474564743765,
+        "grossLoss": 75.96829524529936,
+        "net": 26.556450402138285,
+        "profitFactor": 1.3495728095041268,
+        "expectancy": 0.4828445527661506,
+        "maxConsecutiveLosses": 5
+      },
+      "londonDaily": {
+        "activeDays": 55,
+        "greenDays": 26,
+        "redDays": 29,
+        "net": 26.556450402138285,
+        "avgActiveDay": 0.4828445527661506,
+        "activeDayStdDev": 3.9304164265468677,
+        "activeDaySharpe": 0.12284819224368082,
+        "maxDailyLoss": -2.969633934945309,
+        "maxDailyWin": 11.25850447793025,
+        "maxDrawdown": 16.715344585888698
+      },
+      "combinedTradeStats": {
+        "trades": 143,
+        "wins": 91,
+        "losses": 52,
+        "winRate": 63.63636363636363,
+        "grossProfit": 725.8347922434015,
+        "grossLoss": 339.74015396529757,
+        "net": 386.09463827810396,
+        "profitFactor": 2.136440994011974,
+        "expectancy": 2.6999625054412864,
+        "maxConsecutiveLosses": 3
+      },
+      "combinedDaily": {
+        "activeDays": 137,
+        "greenDays": 87,
+        "redDays": 50,
+        "net": 386.09463827810384,
+        "avgActiveDay": 2.818209038526305,
+        "activeDayStdDev": 8.14569039829976,
+        "activeDaySharpe": 0.3459754668695175,
+        "maxDailyLoss": -13.731386312621348,
+        "maxDailyWin": 20.670720000000447,
+        "maxDrawdown": 26.075331448094666
+      },
+      "monthlyDistribution": [
+        {
+          "month": "2022-03",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -14.606819390670235,
+          "winRate": 0
+        },
+        {
+          "month": "2022-04",
+          "trades": 4,
+          "wins": 2,
+          "losses": 2,
+          "net": -2.172296873253009,
+          "winRate": 50
+        },
+        {
+          "month": "2022-05",
+          "trades": 5,
+          "wins": 4,
+          "losses": 1,
+          "net": 29.099194424854957,
+          "winRate": 80
+        },
+        {
+          "month": "2022-06",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 1.6512189079293211,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2022-07",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -2.6517399999999514,
+          "winRate": 0
+        },
+        {
+          "month": "2022-08",
+          "trades": 7,
+          "wins": 5,
+          "losses": 2,
+          "net": 9.484827116289392,
+          "winRate": 71.42857142857143
+        },
+        {
+          "month": "2022-09",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 16.51071000000162,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2022-10",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 12.620916301108428,
+          "winRate": 75
+        },
+        {
+          "month": "2022-11",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -2.7269967056288986,
+          "winRate": 0
+        },
+        {
+          "month": "2022-12",
+          "trades": 5,
+          "wins": 4,
+          "losses": 1,
+          "net": 21.616523405592446,
+          "winRate": 80
+        },
+        {
+          "month": "2023-01",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 19.875520000002222,
+          "winRate": 100
+        },
+        {
+          "month": "2023-02",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -13.731386312621348,
+          "winRate": 0
+        },
+        {
+          "month": "2023-03",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 7.962465371395869,
+          "winRate": 60
+        },
+        {
+          "month": "2023-04",
+          "trades": 6,
+          "wins": 4,
+          "losses": 2,
+          "net": 17.428848504421833,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2023-05",
+          "trades": 8,
+          "wins": 4,
+          "losses": 4,
+          "net": -1.189012042037767,
+          "winRate": 50
+        },
+        {
+          "month": "2023-07",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 10.0713669459932,
+          "winRate": 100
+        },
+        {
+          "month": "2023-08",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 7.266165500160374,
+          "winRate": 50
+        },
+        {
+          "month": "2023-09",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -17.783503147711773,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2023-10",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 11.146375885258335,
+          "winRate": 100
+        },
+        {
+          "month": "2023-11",
+          "trades": 6,
+          "wins": 5,
+          "losses": 1,
+          "net": 39.163202338733946,
+          "winRate": 83.33333333333334
+        },
+        {
+          "month": "2023-12",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 9.867018025135854,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2024-01",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 3.3282861429935036,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2024-02",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -1.5340748330957368,
+          "winRate": 50
+        },
+        {
+          "month": "2024-04",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 7.613100000001281,
+          "winRate": 100
+        },
+        {
+          "month": "2024-05",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 20.316443014033638,
+          "winRate": 100
+        },
+        {
+          "month": "2024-06",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.94664273215743,
+          "winRate": 100
+        },
+        {
+          "month": "2024-07",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.969369999999229,
+          "winRate": 0
+        },
+        {
+          "month": "2024-08",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 30.203079366997585,
+          "winRate": 100
+        },
+        {
+          "month": "2024-09",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 12.95574500000008,
+          "winRate": 100
+        },
+        {
+          "month": "2024-11",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 18.21991599113707,
+          "winRate": 100
+        },
+        {
+          "month": "2024-12",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -3.9095748179424348,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2025-01",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -2.874941108490141,
+          "winRate": 0
+        },
+        {
+          "month": "2025-02",
+          "trades": 5,
+          "wins": 5,
+          "losses": 0,
+          "net": 50.44517453128722,
+          "winRate": 100
+        },
+        {
+          "month": "2025-03",
+          "trades": 4,
+          "wins": 4,
+          "losses": 0,
+          "net": 33.61225241602405,
+          "winRate": 100
+        },
+        {
+          "month": "2025-04",
+          "trades": 4,
+          "wins": 2,
+          "losses": 2,
+          "net": -1.5450842517964496,
+          "winRate": 50
+        },
+        {
+          "month": "2025-05",
+          "trades": 7,
+          "wins": 3,
+          "losses": 4,
+          "net": 1.4076562085516047,
+          "winRate": 42.857142857142854
+        },
+        {
+          "month": "2025-06",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 16.27383500000151,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-07",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 25.43894908271438,
+          "winRate": 60
+        },
+        {
+          "month": "2025-08",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -5.871194676570446,
+          "winRate": 50
+        },
+        {
+          "month": "2025-09",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.925760000000466,
+          "winRate": 0
+        },
+        {
+          "month": "2025-10",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -4.209704999999821,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2025-11",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 7.192653080199744,
+          "winRate": 50
+        },
+        {
+          "month": "2026-01",
+          "trades": 6,
+          "wins": 5,
+          "losses": 1,
+          "net": 35.661002776361386,
+          "winRate": 83.33333333333334
+        },
+        {
+          "month": "2026-03",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 2.885574999999318,
+          "winRate": 50
+        },
+        {
+          "month": "2026-04",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -14.158045631415675,
+          "winRate": 0
+        },
+        {
+          "month": "2026-05",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.689479999999564,
+          "winRate": 100
+        }
+      ]
+    },
+    {
+      "key": "london_25_asian_range_filter",
+      "label": "NY + London 25% + Asian range filter",
+      "notes": "Initial range-quality filter: Asian range must be between 15 and 60 pips unless overridden by env.",
+      "env": {
+        "TRADING_PAIRS": "EUR_USD,USD_JPY",
+        "STRATEGY_MODE": "london_asian_fake_break_reversal",
+        "SESSION_WINDOW_MODE": "london_only",
+        "LONDON_FAKE_BREAK_PROFILE": "candidate_b",
+        "LONDON_FAKE_BREAK_TRADE_END_UTC": "9",
+        "LONDON_FAKE_BREAK_EXCLUDED_PAIR_WEEKDAYS": "EUR_USD:Thu",
+        "LONDON_MAX_LOSSES_PER_DAY": "1",
+        "LONDON_FAKE_BREAK_MIN_ASIAN_RANGE_PIPS": "15",
+        "LONDON_FAKE_BREAK_MAX_ASIAN_RANGE_PIPS": "60"
+      },
+      "londonRawSummary": {
+        "total": 77,
+        "wins": 38,
+        "losses": 39,
+        "winRate": "49.4",
+        "netProfit": 194.34449954276442,
+        "finalBalance": 2132.3289956667954,
+        "dailyRiskSimulation": {
+          "blockedDays": 2,
+          "blockedSignals": 0,
+          "blockedPendingTriggers": 0
+        }
+      },
+      "londonTradeStats": {
+        "trades": 77,
+        "wins": 38,
+        "losses": 39,
+        "winRate": 49.35064935064935,
+        "grossProfit": 145.3837879566627,
+        "grossLoss": 96.79766307097134,
+        "net": 48.586124885691426,
+        "profitFactor": 1.5019348953710625,
+        "expectancy": 0.6309886348791094,
+        "maxConsecutiveLosses": 4
+      },
+      "londonDaily": {
+        "activeDays": 74,
+        "greenDays": 37,
+        "redDays": 37,
+        "net": 48.586124885691426,
+        "avgActiveDay": 0.6565692552120463,
+        "activeDayStdDev": 3.746175353013077,
+        "activeDaySharpe": 0.1752638873895646,
+        "maxDailyLoss": -5.497417501125938,
+        "maxDailyWin": 11.225445786445071,
+        "maxDrawdown": 10.787289991772692
+      },
+      "combinedTradeStats": {
+        "trades": 165,
+        "wins": 103,
+        "losses": 62,
+        "winRate": 62.42424242424243,
+        "grossProfit": 768.6938345526265,
+        "grossLoss": 360.5695217909695,
+        "net": 408.12431276165694,
+        "profitFactor": 2.13188799412241,
+        "expectancy": 2.4734806834039813,
+        "maxConsecutiveLosses": 3
+      },
+      "combinedDaily": {
+        "activeDays": 156,
+        "greenDays": 98,
+        "redDays": 58,
+        "net": 408.1243127616569,
+        "avgActiveDay": 2.616181492061903,
+        "activeDayStdDev": 7.781148494001309,
+        "activeDaySharpe": 0.336220481343954,
+        "maxDailyLoss": -14.065614343362427,
+        "maxDailyWin": 20.670720000000447,
+        "maxDrawdown": 25.122644343362044
+      },
+      "monthlyDistribution": [
+        {
+          "month": "2022-03",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -6.28564939066967,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2022-04",
+          "trades": 4,
+          "wins": 2,
+          "losses": 2,
+          "net": -11.579275101183018,
+          "winRate": 50
+        },
+        {
+          "month": "2022-05",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 23.67695734283268,
+          "winRate": 75
+        },
+        {
+          "month": "2022-06",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 3.999648907929469,
+          "winRate": 75
+        },
+        {
+          "month": "2022-07",
+          "trades": 3,
+          "wins": 0,
+          "losses": 3,
+          "net": -8.070284991772898,
+          "winRate": 0
+        },
+        {
+          "month": "2022-08",
+          "trades": 6,
+          "wins": 3,
+          "losses": 3,
+          "net": 5.0069246790423385,
+          "winRate": 50
+        },
+        {
+          "month": "2022-09",
+          "trades": 5,
+          "wins": 4,
+          "losses": 1,
+          "net": 24.324825000002207,
+          "winRate": 80
+        },
+        {
+          "month": "2022-10",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 12.620916301108428,
+          "winRate": 75
+        },
+        {
+          "month": "2022-12",
+          "trades": 8,
+          "wins": 5,
+          "losses": 3,
+          "net": 24.585295053758436,
+          "winRate": 62.5
+        },
+        {
+          "month": "2023-01",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 25.38586000000213,
+          "winRate": 100
+        },
+        {
+          "month": "2023-02",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -13.641417986854455,
+          "winRate": 0
+        },
+        {
+          "month": "2023-03",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 10.679470371395663,
+          "winRate": 75
+        },
+        {
+          "month": "2023-04",
+          "trades": 9,
+          "wins": 6,
+          "losses": 3,
+          "net": 27.893077962700513,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2023-05",
+          "trades": 7,
+          "wins": 4,
+          "losses": 3,
+          "net": -0.7521748848814029,
+          "winRate": 57.14285714285714
+        },
+        {
+          "month": "2023-06",
+          "trades": 4,
+          "wins": 1,
+          "losses": 3,
+          "net": -1.7216385251250292,
+          "winRate": 25
+        },
+        {
+          "month": "2023-07",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 10.0713669459932,
+          "winRate": 100
+        },
+        {
+          "month": "2023-08",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": 6.778535500160512,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2023-09",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -17.783503147711773,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2023-10",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 8.205356309923499,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2023-11",
+          "trades": 6,
+          "wins": 6,
+          "losses": 0,
+          "net": 42.81756495748027,
+          "winRate": 100
+        },
+        {
+          "month": "2023-12",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 9.867018025135854,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2024-01",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 3.3282861429935036,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2024-02",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -1.5340748330957368,
+          "winRate": 50
+        },
+        {
+          "month": "2024-04",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 7.613100000001281,
+          "winRate": 100
+        },
+        {
+          "month": "2024-05",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 21.33968551403364,
+          "winRate": 100
+        },
+        {
+          "month": "2024-06",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.94664273215743,
+          "winRate": 100
+        },
+        {
+          "month": "2024-07",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -8.621692499999135,
+          "winRate": 50
+        },
+        {
+          "month": "2024-08",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 30.203079366997585,
+          "winRate": 100
+        },
+        {
+          "month": "2024-09",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 10.50495999999999,
+          "winRate": 100
+        },
+        {
+          "month": "2024-11",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 18.21991599113707,
+          "winRate": 100
+        },
+        {
+          "month": "2024-12",
+          "trades": 4,
+          "wins": 1,
+          "losses": 3,
+          "net": -4.552532317942151,
+          "winRate": 25
+        },
+        {
+          "month": "2025-02",
+          "trades": 5,
+          "wins": 5,
+          "losses": 0,
+          "net": 50.44517453128722,
+          "winRate": 100
+        },
+        {
+          "month": "2025-03",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 17.211103750003737,
+          "winRate": 60
+        },
+        {
+          "month": "2025-04",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 5.624577438729119,
+          "winRate": 75
+        },
+        {
+          "month": "2025-05",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 9.704230830231008,
+          "winRate": 75
+        },
+        {
+          "month": "2025-06",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 16.27383500000151,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-07",
+          "trades": 6,
+          "wins": 4,
+          "losses": 2,
+          "net": 26.878072832714803,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-08",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -8.584184676570455,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2025-09",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -14.889645117693707,
+          "winRate": 0
+        },
+        {
+          "month": "2025-10",
+          "trades": 5,
+          "wins": 2,
+          "losses": 3,
+          "net": -1.2050437499991116,
+          "winRate": 40
+        },
+        {
+          "month": "2025-11",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 11.05815308020033,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-12",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -0.09754638632700008,
+          "winRate": 50
+        },
+        {
+          "month": "2026-01",
+          "trades": 6,
+          "wins": 5,
+          "losses": 1,
+          "net": 37.634375945974774,
+          "winRate": 83.33333333333334
+        },
+        {
+          "month": "2026-03",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 2.885574999999318,
+          "winRate": 50
+        },
+        {
+          "month": "2026-04",
+          "trades": 2,
+          "wins": 0,
+          "losses": 2,
+          "net": -14.158045631415675,
+          "winRate": 0
+        },
+        {
+          "month": "2026-05",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 6.817436488970632,
+          "winRate": 50
+        }
+      ]
+    },
+    {
+      "key": "london_25_reclaim_confirmation",
+      "label": "NY + London 25% + reclaim-inside-range confirmation",
+      "notes": "Requires the reclaim close to occur after the break candle; same-candle fake breaks are ignored.",
+      "env": {
+        "TRADING_PAIRS": "EUR_USD,USD_JPY",
+        "STRATEGY_MODE": "london_asian_fake_break_reversal",
+        "SESSION_WINDOW_MODE": "london_only",
+        "LONDON_FAKE_BREAK_PROFILE": "candidate_b",
+        "LONDON_FAKE_BREAK_TRADE_END_UTC": "9",
+        "LONDON_FAKE_BREAK_EXCLUDED_PAIR_WEEKDAYS": "EUR_USD:Thu",
+        "LONDON_MAX_LOSSES_PER_DAY": "1",
+        "LONDON_FAKE_BREAK_MIN_CONFIRMATION_BARS_AFTER_BREAK": "1"
+      },
+      "londonRawSummary": {
+        "total": 94,
+        "wins": 47,
+        "losses": 47,
+        "winRate": "50.0",
+        "netProfit": 247.42938639287513,
+        "finalBalance": 2185.413882516906,
+        "dailyRiskSimulation": {
+          "blockedDays": 3,
+          "blockedSignals": 0,
+          "blockedPendingTriggers": 0
+        }
+      },
+      "londonTradeStats": {
+        "trades": 94,
+        "wins": 47,
+        "losses": 47,
+        "winRate": 50,
+        "grossProfit": 181.28195591619777,
+        "grossLoss": 119.42460931797882,
+        "net": 61.85734659821895,
+        "profitFactor": 1.517961473363653,
+        "expectancy": 0.658056878704457,
+        "maxConsecutiveLosses": 5
+      },
+      "londonDaily": {
+        "activeDays": 94,
+        "greenDays": 47,
+        "redDays": 47,
+        "net": 61.85734659821895,
+        "avgActiveDay": 0.658056878704457,
+        "activeDayStdDev": 3.784238642796434,
+        "activeDaySharpe": 0.1738941279396094,
+        "maxDailyLoss": -2.969633934945309,
+        "maxDailyWin": 11.225445786445071,
+        "maxDrawdown": 18.5335682497668
+      },
+      "combinedTradeStats": {
+        "trades": 182,
+        "wins": 112,
+        "losses": 70,
+        "winRate": 61.53846153846154,
+        "grossProfit": 804.5920025121616,
+        "grossLoss": 383.1964680379771,
+        "net": 421.3955344741843,
+        "profitFactor": 2.0996853301696445,
+        "expectancy": 2.315360079528485,
+        "maxConsecutiveLosses": 4
+      },
+      "combinedDaily": {
+        "activeDays": 175,
+        "greenDays": 108,
+        "redDays": 67,
+        "net": 421.3955344741842,
+        "avgActiveDay": 2.407974482709624,
+        "activeDayStdDev": 7.464584623208812,
+        "activeDaySharpe": 0.32258653418205935,
+        "maxDailyLoss": -13.731386312621348,
+        "maxDailyWin": 20.670720000000447,
+        "maxDrawdown": 29.40566835804202
+      },
+      "monthlyDistribution": [
+        {
+          "month": "2022-03",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -6.28564939066967,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2022-04",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": -3.974140870240637,
+          "winRate": 60
+        },
+        {
+          "month": "2022-05",
+          "trades": 6,
+          "wins": 4,
+          "losses": 2,
+          "net": 26.35197773406682,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2022-06",
+          "trades": 4,
+          "wins": 2,
+          "losses": 2,
+          "net": -1.2119244335136319,
+          "winRate": 50
+        },
+        {
+          "month": "2022-07",
+          "trades": 3,
+          "wins": 0,
+          "losses": 3,
+          "net": -8.070284991772898,
+          "winRate": 0
+        },
+        {
+          "month": "2022-08",
+          "trades": 6,
+          "wins": 3,
+          "losses": 3,
+          "net": 4.955269374680373,
+          "winRate": 50
+        },
+        {
+          "month": "2022-09",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 23.380914203811532,
+          "winRate": 60
+        },
+        {
+          "month": "2022-10",
+          "trades": 4,
+          "wins": 4,
+          "losses": 0,
+          "net": 19.62253837180153,
+          "winRate": 100
+        },
+        {
+          "month": "2022-11",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -2.779310629113185,
+          "winRate": 0
+        },
+        {
+          "month": "2022-12",
+          "trades": 6,
+          "wins": 4,
+          "losses": 2,
+          "net": 20.48402590559263,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2023-01",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 25.38586000000213,
+          "winRate": 100
+        },
+        {
+          "month": "2023-02",
+          "trades": 3,
+          "wins": 0,
+          "losses": 3,
+          "net": -16.404266312621072,
+          "winRate": 0
+        },
+        {
+          "month": "2023-03",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 7.962465371395869,
+          "winRate": 60
+        },
+        {
+          "month": "2023-04",
+          "trades": 8,
+          "wins": 6,
+          "losses": 2,
+          "net": 29.310377872825164,
+          "winRate": 75
+        },
+        {
+          "month": "2023-05",
+          "trades": 7,
+          "wins": 4,
+          "losses": 3,
+          "net": -0.6294700098036239,
+          "winRate": 57.14285714285714
+        },
+        {
+          "month": "2023-06",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 2.973665807525991,
+          "winRate": 60
+        },
+        {
+          "month": "2023-07",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 21.047320109329576,
+          "winRate": 100
+        },
+        {
+          "month": "2023-08",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 9.566768025236305,
+          "winRate": 50
+        },
+        {
+          "month": "2023-09",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -17.783503147711773,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2023-10",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 15.633935885258165,
+          "winRate": 100
+        },
+        {
+          "month": "2023-11",
+          "trades": 7,
+          "wins": 6,
+          "losses": 1,
+          "net": 40.39220268508756,
+          "winRate": 85.71428571428571
+        },
+        {
+          "month": "2023-12",
+          "trades": 4,
+          "wins": 3,
+          "losses": 1,
+          "net": 17.961878126790236,
+          "winRate": 75
+        },
+        {
+          "month": "2024-01",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 3.3737161728510223,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2024-02",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -4.316151478382917,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2024-04",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 7.613100000001281,
+          "winRate": 100
+        },
+        {
+          "month": "2024-05",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 21.33968551403364,
+          "winRate": 100
+        },
+        {
+          "month": "2024-06",
+          "trades": 1,
+          "wins": 1,
+          "losses": 0,
+          "net": 9.94664273215743,
+          "winRate": 100
+        },
+        {
+          "month": "2024-07",
+          "trades": 3,
+          "wins": 1,
+          "losses": 2,
+          "net": -11.455402499999664,
+          "winRate": 33.33333333333333
+        },
+        {
+          "month": "2024-08",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 30.203079366997585,
+          "winRate": 100
+        },
+        {
+          "month": "2024-09",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 12.95574500000008,
+          "winRate": 100
+        },
+        {
+          "month": "2024-10",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -2.7688216110210924,
+          "winRate": 0
+        },
+        {
+          "month": "2024-11",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 15.293163553652652,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2024-12",
+          "trades": 5,
+          "wins": 1,
+          "losses": 4,
+          "net": -7.313141320248535,
+          "winRate": 20
+        },
+        {
+          "month": "2025-01",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 1.529358891510002,
+          "winRate": 50
+        },
+        {
+          "month": "2025-02",
+          "trades": 5,
+          "wins": 5,
+          "losses": 0,
+          "net": 50.44517453128722,
+          "winRate": 100
+        },
+        {
+          "month": "2025-03",
+          "trades": 5,
+          "wins": 3,
+          "losses": 2,
+          "net": 17.211103750003737,
+          "winRate": 60
+        },
+        {
+          "month": "2025-04",
+          "trades": 6,
+          "wins": 3,
+          "losses": 3,
+          "net": 0.13943706058910355,
+          "winRate": 50
+        },
+        {
+          "month": "2025-05",
+          "trades": 6,
+          "wins": 3,
+          "losses": 3,
+          "net": 4.152048155551198,
+          "winRate": 50
+        },
+        {
+          "month": "2025-06",
+          "trades": 3,
+          "wins": 3,
+          "losses": 0,
+          "net": 19.159926758208748,
+          "winRate": 100
+        },
+        {
+          "month": "2025-07",
+          "trades": 6,
+          "wins": 4,
+          "losses": 2,
+          "net": 27.555239082714515,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-08",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": -10.423088816917375,
+          "winRate": 50
+        },
+        {
+          "month": "2025-09",
+          "trades": 3,
+          "wins": 0,
+          "losses": 3,
+          "net": -17.777535791125487,
+          "winRate": 0
+        },
+        {
+          "month": "2025-10",
+          "trades": 5,
+          "wins": 2,
+          "losses": 3,
+          "net": -1.2050437499991116,
+          "winRate": 40
+        },
+        {
+          "month": "2025-11",
+          "trades": 3,
+          "wins": 2,
+          "losses": 1,
+          "net": 11.05815308020033,
+          "winRate": 66.66666666666666
+        },
+        {
+          "month": "2025-12",
+          "trades": 2,
+          "wins": 2,
+          "losses": 0,
+          "net": 3.205005000000756,
+          "winRate": 100
+        },
+        {
+          "month": "2026-01",
+          "trades": 6,
+          "wins": 5,
+          "losses": 1,
+          "net": 35.30835694419114,
+          "winRate": 83.33333333333334
+        },
+        {
+          "month": "2026-03",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 2.778579999999764,
+          "winRate": 50
+        },
+        {
+          "month": "2026-04",
+          "trades": 1,
+          "wins": 0,
+          "losses": 1,
+          "net": -11.320882028999588,
+          "winRate": 0
+        },
+        {
+          "month": "2026-05",
+          "trades": 2,
+          "wins": 1,
+          "losses": 1,
+          "net": 6.817436488970632,
+          "winRate": 50
+        }
+      ]
+    }
+  ]
+}

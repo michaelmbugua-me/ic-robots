@@ -1,0 +1,224 @@
+{
+  "generatedAtUTC": "2026-05-21T10:48:34.363Z",
+  "results": [
+    {
+      "name": "USDJPY_B_default",
+      "total": 113,
+      "winRate": "42.5",
+      "net": "153.42",
+      "final": "2091.41",
+      "blockedDays": 6,
+      "byPair": {
+        "USD_JPY": {
+          "n": 113,
+          "winRate": "42.5",
+          "pf": "1.244",
+          "net": 153.42,
+          "expectancy": 1.358
+        }
+      },
+      "exits": {
+        "SL": 52,
+        "TIME": 60,
+        "TP": 1
+      }
+    },
+    {
+      "name": "USDJPY_B_time_exit",
+      "total": 113,
+      "winRate": "42.5",
+      "net": "120.69",
+      "final": "2058.67",
+      "blockedDays": 5,
+      "byPair": {
+        "USD_JPY": {
+          "n": 113,
+          "winRate": "42.5",
+          "pf": "1.192",
+          "net": 120.69,
+          "expectancy": 1.068
+        }
+      },
+      "exits": {
+        "SL": 52,
+        "TIME": 61
+      }
+    },
+    {
+      "name": "USDJPY_B_h1_reversal_time",
+      "total": 51,
+      "winRate": "43.1",
+      "net": "12.73",
+      "final": "1950.72",
+      "blockedDays": 2,
+      "byPair": {
+        "USD_JPY": {
+          "n": 51,
+          "winRate": "43.1",
+          "pf": "1.045",
+          "net": 12.73,
+          "expectancy": 0.25
+        }
+      },
+      "exits": {
+        "TIME": 27,
+        "SL": 24
+      }
+    },
+    {
+      "name": "USDJPY_B_min5_risk6_12_time",
+      "total": 98,
+      "winRate": "43.9",
+      "net": "65.24",
+      "final": "2003.23",
+      "blockedDays": 4,
+      "byPair": {
+        "USD_JPY": {
+          "n": 98,
+          "winRate": "43.9",
+          "pf": "1.120",
+          "net": 65.24,
+          "expectancy": 0.666
+        }
+      },
+      "exits": {
+        "SL": 47,
+        "TIME": 51
+      }
+    },
+    {
+      "name": "USDJPY_B_all_weekdays_time",
+      "total": 183,
+      "winRate": "38.8",
+      "net": "62.69",
+      "final": "2000.68",
+      "blockedDays": 8,
+      "byPair": {
+        "USD_JPY": {
+          "n": 183,
+          "winRate": "38.8",
+          "pf": "1.056",
+          "net": 62.69,
+          "expectancy": 0.343
+        }
+      },
+      "exits": {
+        "SL": 92,
+        "TIME": 91
+      }
+    },
+    {
+      "name": "EU_UJ_B_default",
+      "total": 328,
+      "winRate": "42.7",
+      "net": "198.13",
+      "final": "2136.12",
+      "blockedDays": 9,
+      "byPair": {
+        "EUR_USD": {
+          "n": 215,
+          "winRate": "42.8",
+          "pf": "1.037",
+          "net": 44.71,
+          "expectancy": 0.208
+        },
+        "USD_JPY": {
+          "n": 113,
+          "winRate": "42.5",
+          "pf": "1.244",
+          "net": 153.42,
+          "expectancy": 1.358
+        }
+      },
+      "exits": {
+        "TIME": 146,
+        "SL": 157,
+        "TP": 25
+      }
+    },
+    {
+      "name": "EU_UJ_B_time_exit",
+      "total": 328,
+      "winRate": "42.7",
+      "net": "163.05",
+      "final": "2101.03",
+      "blockedDays": 7,
+      "byPair": {
+        "EUR_USD": {
+          "n": 215,
+          "winRate": "42.8",
+          "pf": "1.035",
+          "net": 42.36,
+          "expectancy": 0.197
+        },
+        "USD_JPY": {
+          "n": 113,
+          "winRate": "42.5",
+          "pf": "1.192",
+          "net": 120.69,
+          "expectancy": 1.068
+        }
+      },
+      "exits": {
+        "TIME": 171,
+        "SL": 157
+      }
+    },
+    {
+      "name": "EU_UJ_B_h1_reversal_time",
+      "total": 140,
+      "winRate": "40.7",
+      "net": "-108.32",
+      "final": "1829.66",
+      "blockedDays": 2,
+      "byPair": {
+        "EUR_USD": {
+          "n": 89,
+          "winRate": "39.3",
+          "pf": "0.778",
+          "net": -121.05,
+          "expectancy": -1.36
+        },
+        "USD_JPY": {
+          "n": 51,
+          "winRate": "43.1",
+          "pf": "1.045",
+          "net": 12.73,
+          "expectancy": 0.25
+        }
+      },
+      "exits": {
+        "TIME": 68,
+        "SL": 72
+      }
+    },
+    {
+      "name": "EU_UJ_B_min5_risk6_12_time",
+      "total": 267,
+      "winRate": "44.2",
+      "net": "60.75",
+      "final": "1998.73",
+      "blockedDays": 5,
+      "byPair": {
+        "EUR_USD": {
+          "n": 169,
+          "winRate": "44.4",
+          "pf": "0.995",
+          "net": -4.5,
+          "expectancy": -0.027
+        },
+        "USD_JPY": {
+          "n": 98,
+          "winRate": "43.9",
+          "pf": "1.120",
+          "net": 65.24,
+          "expectancy": 0.666
+        }
+      },
+      "exits": {
+        "SL": 117,
+        "TIME": 150
+      }
+    }
+  ]
+}

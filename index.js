@@ -8,7 +8,7 @@
 import fs from "fs";
 import { ICMarketsClient } from "./icmarkets.js";
 import { config } from "./config.js";
-import { detectHigherTimeframeTrend, generateNYAsianContinuationSignal } from "./indicators.js";
+import { detectHigherTimeframeTrend, generateLondonAsianFakeBreakReversalSignal, generateNYAsianContinuationSignal } from "./indicators.js";
 import { RiskManager } from "./risk-manager.js";
 
 const STATE_FILE = "state.json";
@@ -136,7 +136,10 @@ async function tickPair(pair, timestamp) {
   const isJPY = pair.includes("JPY");
 
   // 1. Refresh candles only when a new closed candle can exist.
-  const candleCount = config.strategy.nyAsianContinuation?.lookbackCandles ?? 220;
+  const candleCount = Math.max(
+    config.strategy.nyAsianContinuation?.lookbackCandles ?? 220,
+    config.strategy.londonAsianFakeBreakReversal?.lookbackCandles ?? 220,
+  );
   if (shouldRefreshClosedCandles(state.candleCache, config.granularity, now, state.lastEntryCandleFetchAt)) {
     state.lastEntryCandleFetchAt = now;
     try {
@@ -204,21 +207,33 @@ async function tickPair(pair, timestamp) {
 
   // 2. Generate signal
   const activeWindow = getActiveSessionWindowUTC(new Date());
-  const signal = normalizeSignal(generateStrategySignal(state, higherTimeframe, activeWindow, isJPY));
+  const signal = normalizeSignal(generateStrategySignal(pair, state, higherTimeframe, activeWindow, isJPY));
 
   // Log status every minute
   if (now - (state.lastLogTime || 0) > 60000) {
     console.log(
       `[${timestamp}] ${pair} | Trend: ${upper(signal.trend, "neutral")} | ` +
       `HTF: ${upper(higherTimeframe.trend, "neutral")} | ` +
-      `Strategy: ${config.strategy.mode} | Pending: ${state.pendingOrders.length} | ` +
+      `Strategy: ${signal.strategy || config.strategy.mode} | Pending: ${state.pendingOrders.length} | ` +
       `Signal: ${upper(signal.signal, "none")}`
     );
-    if (signal.signal !== 'none') console.log(`  → ${signal.reason}`);
+    if (signal.signal !== 'none' || config.strategy.mode === "london_asian_fake_break_reversal") console.log(`  → ${signal.reason}`);
     state.lastLogTime = now;
   }
 
   if (signal.signal === 'none') return;
+
+  if (signal.monitorOnly) {
+    const quote = getFreshQuote(pair, state);
+    const londonCfg = config.strategy.londonAsianFakeBreakReversal ?? {};
+    console.log(
+      `  👀 London monitor-only signal for ${pair}: ${signal.direction || upper(signal.signal)} | ` +
+      `Spread: ${quote ? `${quote.spreadPips.toFixed(1)}p` : "n/a"} | ` +
+      `Brake: maxLosses/day=${londonCfg.maxLossesPerDay ?? 0}, maxDailyLossUSD=${londonCfg.maxDailyLossUSD ?? 0} | ` +
+      `${signal.reason}`
+    );
+    return;
+  }
 
   // 3. Trade gate
   if (state.activeTrades.length >= config.maxTradesPerPair || state.pendingOrders.length > 0) return;
@@ -279,30 +294,102 @@ async function tickPair(pair, timestamp) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function generateStrategySignal(state, higherTimeframe, activeWindow, isJPY) {
+function generateStrategySignal(pair, state, higherTimeframe, activeWindow, isJPY) {
+  const mode = config.strategy.mode;
+  if (mode === "combined_ny_london") {
+    return generateCombinedStrategySignal(pair, state, higherTimeframe, activeWindow, isJPY);
+  }
+
+  if (mode === "london_asian_fake_break_reversal") {
+    return generateLondonMonitorSignal(pair, state, higherTimeframe, activeWindow, isJPY);
+  }
+
+  if (mode !== "ny_asian_continuation") {
+    return noSignal(`${mode} is not supported by live routing`);
+  }
+
+  return generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, activeWindow, isJPY);
+}
+
+function generateCombinedStrategySignal(pair, state, higherTimeframe, activeWindow, isJPY) {
+  const signals = [
+    generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, activeWindow, isJPY),
+    generateLondonMonitorSignal(pair, state, higherTimeframe, activeWindow, isJPY),
+  ].map(normalizeSignal);
+
+  const actionable = signals.find(signal => signal.signal !== "none");
+  if (actionable) return actionable;
+
+  return noSignal(
+    signals
+      .map(signal => `${signal.strategy || "unknown"}: ${signal.reason}`)
+      .join(" | ")
+  );
+}
+
+function generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, activeWindow, isJPY) {
   const htfConfig = config.strategy.higherTimeframeTrend ?? {};
   const htfTrend = htfConfig.enabled ? higherTimeframe.trend : null;
 
   const cfg = config.strategy.nyAsianContinuation ?? {};
   if (Array.isArray(cfg.allowedSessionNames) && cfg.allowedSessionNames.length > 0 && !cfg.allowedSessionNames.includes(activeWindow?.name)) {
-    return noSignal(`NY Asian continuation blocked outside allowed session (${activeWindow?.name ?? "none"})`);
+    return noSignal(`NY Asian continuation blocked outside allowed session (${activeWindow?.name ?? "none"})`, "ny_asian_continuation");
   }
 
   const sessionKey = getSessionKey(new Date(), activeWindow);
   if ((state.sessionTradeCounts.get(sessionKey) ?? 0) >= (cfg.maxTradesPerSession ?? 1)) {
-    return noSignal(`NY Asian continuation max trades reached for ${sessionKey}`);
+    return noSignal(`NY Asian continuation max trades reached for ${sessionKey}`, "ny_asian_continuation");
   }
 
-  return generateNYAsianContinuationSignal(state.candleCache, {
+  const signal = generateNYAsianContinuationSignal(state.candleCache, {
     ...cfg,
     asianRange: getAsianRangeFromCandles(state.candleCache, new Date(), cfg),
     higherTimeframeTrend: htfTrend,
     isJPY,
   });
+  return signal.signal === "none" ? { ...signal, strategy: "ny_asian_continuation" } : signal;
 }
 
-function noSignal(reason) {
-  return { signal: "none", trend: "neutral", entry: null, sl: null, tp: null, riskPips: null, rewardPips: null, reason };
+function generateLondonMonitorSignal(pair, state, higherTimeframe, activeWindow, isJPY) {
+  const cfg = config.strategy.londonAsianFakeBreakReversal ?? {};
+  if (!cfg.monitorEnabled) {
+    return noSignal(`London fake-break monitor is disabled; set LONDON_MONITOR_ENABLED=true to observe signals`, "london_asian_fake_break_reversal");
+  }
+
+  if (Array.isArray(cfg.allowedPairs) && cfg.allowedPairs.length > 0 && !cfg.allowedPairs.includes(pair)) {
+    return noSignal(`London fake-break blocked outside allowed pairs (${pair})`, "london_asian_fake_break_reversal");
+  }
+
+  if (Array.isArray(cfg.allowedSessionNames) && cfg.allowedSessionNames.length > 0 && !cfg.allowedSessionNames.includes(activeWindow?.name)) {
+    return noSignal(`London fake-break blocked outside allowed session (${activeWindow?.name ?? "none"})`, "london_asian_fake_break_reversal");
+  }
+
+  const excludedDay = cfg.excludedPairWeekdays?.[pair];
+  if (excludedDay && excludedDay === weekdayUTC(new Date())) {
+    return noSignal(`London fake-break blocked by pair/day exclusion ${pair}:${excludedDay}`, "london_asian_fake_break_reversal");
+  }
+
+  const now = new Date();
+  const htfConfig = config.strategy.higherTimeframeTrend ?? {};
+  const htfTrend = htfConfig.enabled ? higherTimeframe.trend : null;
+  const signal = generateLondonAsianFakeBreakReversalSignal(state.candleCache, {
+    ...cfg,
+    asianRange: getAsianRangeFromCandles(state.candleCache, now, cfg),
+    higherTimeframeTrend: htfTrend,
+    isJPY,
+  });
+
+  if (signal.signal === "none") return { ...signal, strategy: "london_asian_fake_break_reversal" };
+  return {
+    ...signal,
+    monitorOnly: !cfg.liveExecutionEnabled,
+    liveExecutionEnabled: Boolean(cfg.liveExecutionEnabled),
+    reason: `${signal.reason} | London monitor-only=${!cfg.liveExecutionEnabled}`,
+  };
+}
+
+function noSignal(reason, strategy = null) {
+  return { signal: "none", trend: "neutral", entry: null, sl: null, tp: null, riskPips: null, rewardPips: null, strategy, reason };
 }
 
 function normalizeSignal(signal) {
@@ -1038,6 +1125,10 @@ function loadSavedPendingOrdersById() {
 
 function getSessionKey(dateObj, activeWindow) {
   return `${dateObj.toISOString().slice(0, 10)}:${activeWindow?.name ?? "unknown"}`;
+}
+
+function weekdayUTC(dateObj) {
+  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dateObj.getUTCDay()];
 }
 
 function getActiveSessionWindowUTC(now) {
