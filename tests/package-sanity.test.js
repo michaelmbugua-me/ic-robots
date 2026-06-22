@@ -19,10 +19,10 @@ assert.ok(!pkg.scripts.auto.includes("EMA_SEPARATION_MIN_PIPS"), "auto script sh
 assert.ok(!pkg.scripts["backtest-mock"], "stale backtest-mock script should stay removed");
 assert.ok(!pkg.scripts["backtest-multi-mock"], "stale backtest-multi-mock script should stay removed");
 assert.deepEqual(config.strategy.supportedModes, ["ny_asian_continuation", "london_asian_fake_break_reversal", "combined_ny_london"], "supported strategy modes should include NY, London, and the combined router");
-assert.ok(pkg.scripts["backtest:london-fake-break"].includes("STRATEGY_MODE=london_asian_fake_break_reversal"), "London fake-break backtest script should use the London strategy mode");
+assert.ok(pkg.scripts["backtest:london"].includes("STRATEGY_MODE=london_asian_fake_break_reversal"), "London backtest script should use the London strategy mode");
 assert.equal(config.backtest.spreadPips, 0.7, "backtest spread default should stay conservative and configurable");
 assert.equal(config.backtest.slippagePips, 0.3, "backtest slippage default should stay conservative and configurable");
-assert.equal(config.risk.riskPerTradePercent, 0.5, "risk per trade should default to the recommended 0.5% live/backtest risk");
+assert.equal(config.risk.riskPerTradePercent, 1.0, "risk per trade should default to 1% live/backtest risk");
 assert.equal(config.strategy.nyAsianContinuation.minBreakPips, 3, "NY Asian continuation should default to the stronger 3-pip break filter");
 assert.equal(config.strategy.nyAsianContinuation.maxRiskPips, 12, "NY Asian continuation should default to the recommended 12-pip max risk window");
 assert.doesNotMatch(sourceText, /\bema_pullback\b|EMA_SEPARATION_MIN_PIPS|emaSeparationMinPips|generateSignal|detectTrend|hasPullback|hasEarlyTrigger|calcTradeParams/, "removed EMA pullback code should stay removed");

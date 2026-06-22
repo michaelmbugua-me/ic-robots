@@ -32,6 +32,16 @@ async function main() {
     const filename = `history_${pair.replace("/", "_")}.json`;
     if (!fs.existsSync(filename)) continue;
     let candles = JSON.parse(fs.readFileSync(filename, "utf8"));
+
+    // Walk-forward date filtering
+    const wfStart = process.env.BACKTEST_START_DATE ? new Date(process.env.BACKTEST_START_DATE) : null;
+    const wfEnd = process.env.BACKTEST_END_DATE ? new Date(process.env.BACKTEST_END_DATE) : null;
+    if (wfStart || wfEnd) {
+      candles = candles.filter(c => {
+        const t = new Date(c.time);
+        return (!wfStart || t >= wfStart) && (!wfEnd || t < wfEnd);
+      });
+    }
     
     candles = candles.map(c => {
       if (!c.mid && c.bid && c.ask) {

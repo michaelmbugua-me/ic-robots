@@ -124,10 +124,10 @@ export const config = {
   // ─── Financial Plan & Risk Management ──────────────────────────────────
   risk: {
     accountCapitalKES:    250_000,
-    riskPerTradePercent:  envNumber("RISK_PER_TRADE_PERCENT", 0.5),
+    riskPerTradePercent:  envNumber("RISK_PER_TRADE_PERCENT", 1.0),
     enforceDailyStopLoss: envBool("ENFORCE_DAILY_STOP_LOSS", true),
-    dailyStopLossKES:     envNumber("DAILY_STOP_LOSS_KES", 3000),
-    dailyProfitTargetKES: envNumber("DAILY_PROFIT_TARGET_KES", 5000),
+    dailyStopLossKES:     envNumber("DAILY_STOP_LOSS_KES", 6000),
+    dailyProfitTargetKES: envNumber("DAILY_PROFIT_TARGET_KES", 10000),
     maxLeverage:          100,
     usdKesRate:           129.0,
   },
@@ -191,7 +191,7 @@ export const config = {
       availableProfiles: Object.keys(londonFakeBreakProfiles),
       allowedSessionNames: envList("LONDON_FAKE_BREAK_ALLOWED_SESSIONS", ["london_open"]),
       allowedPairs: envList("LONDON_FAKE_BREAK_ALLOWED_PAIRS", []),
-      allowedWeekdays: envList("LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS", ["Tue", "Wed", "Thu"]),
+      allowedWeekdays: envList("LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS", ["Wed"]),
       excludedPairWeekdays: Object.fromEntries(envList("LONDON_FAKE_BREAK_EXCLUDED_PAIR_WEEKDAYS", []).map(item => {
         const [pair, day] = item.split(":").map(v => v?.trim()).filter(Boolean);
         return pair && day ? [pair, day] : null;
@@ -205,15 +205,16 @@ export const config = {
       stopBufferPips: envNumber("LONDON_FAKE_BREAK_STOP_BUFFER_PIPS", 0.5),
       minRiskPips: envNumber("LONDON_FAKE_BREAK_MIN_RISK_PIPS", selectedLondonFakeBreakProfile.minRiskPips),
       maxRiskPips: envNumber("LONDON_FAKE_BREAK_MAX_RISK_PIPS", selectedLondonFakeBreakProfile.maxRiskPips),
-      targetMode: process.env.LONDON_FAKE_BREAK_TARGET_MODE || selectedLondonFakeBreakProfile.targetMode,
+      targetMode: process.env.LONDON_FAKE_BREAK_TARGET_MODE || "time_exit",
+      tpRrMultiplier: envNumber("LONDON_FAKE_BREAK_TP_RR_MULTIPLIER", 0),
       h1Filter: process.env.LONDON_FAKE_BREAK_H1_FILTER || selectedLondonFakeBreakProfile.h1Filter,
       noFadeH1AlignedBreak: envBool("LONDON_FAKE_BREAK_NO_FADE_H1_ALIGNED", false),
       minAsianRangePips: envNumber("LONDON_FAKE_BREAK_MIN_ASIAN_RANGE_PIPS", 0),
-      maxAsianRangePips: envNumber("LONDON_FAKE_BREAK_MAX_ASIAN_RANGE_PIPS", 0),
+      maxAsianRangePips: envNumber("LONDON_FAKE_BREAK_MAX_ASIAN_RANGE_PIPS", 60),
       minConfirmationBarsAfterBreak: envNumber("LONDON_FAKE_BREAK_MIN_CONFIRMATION_BARS_AFTER_BREAK", 0),
       timeExitBars: envNumber("LONDON_FAKE_BREAK_TIME_EXIT_BARS", 12),
       maxTradesPerSession: envNumber("LONDON_FAKE_BREAK_MAX_TRADES_PER_SESSION", 1),
-      maxLossesPerDay: envNumber("LONDON_MAX_LOSSES_PER_DAY", 0),
+      maxLossesPerDay: envNumber("LONDON_MAX_LOSSES_PER_DAY", 1),
       maxDailyLossUSD: envNumber("LONDON_MAX_DAILY_LOSS_USD", 0),
       lookbackCandles: envNumber("LONDON_FAKE_BREAK_LOOKBACK_CANDLES", 220),
     },

@@ -357,14 +357,22 @@ export function generateLondonAsianFakeBreakReversalSignal(candles, opts = {}) {
   const sl = direction === 'SELL'
     ? Math.max(...extremeWindow.map(c => c.high)) + stopBuffer
     : Math.min(...extremeWindow.map(c => c.low)) - stopBuffer;
-  const tp = targetMode === 'time_exit' ? null : direction === 'SELL' ? asianRange.low : asianRange.high;
   const risk = direction === 'SELL' ? sl - entry : entry - sl;
-  const reward = Number.isFinite(tp) ? direction === 'SELL' ? entry - tp : tp - entry : null;
   const riskPips = risk / pipSize;
+
+  let tp = null;
+  let reward = null;
+  if (targetMode === 'time_exit' && opts.tpRrMultiplier && opts.tpRrMultiplier > 0) {
+    reward = risk * opts.tpRrMultiplier;
+    tp = direction === 'SELL' ? entry - reward : entry + reward;
+  } else if (targetMode !== 'time_exit') {
+    tp = direction === 'SELL' ? asianRange.low : asianRange.high;
+    reward = direction === 'SELL' ? entry - tp : tp - entry;
+  }
   const rewardPips = Number.isFinite(reward) ? reward / pipSize : null;
 
   if (risk <= 0) return NO_SIGNAL(`Invalid ${direction} risk — stop is on the wrong side of entry`);
-  if (targetMode !== 'time_exit' && reward <= 0) return NO_SIGNAL(`Invalid ${direction} target — opposite Asian range side is not beyond entry`);
+  if (targetMode !== 'time_exit' && reward !== null && reward <= 0) return NO_SIGNAL(`Invalid ${direction} target — opposite Asian range side is not beyond entry`);
   if (riskPips < minRiskPips) return NO_SIGNAL(`Risk too small (${riskPips.toFixed(1)}p) — below ${minRiskPips}p minimum`);
   if (riskPips > maxRiskPips) return NO_SIGNAL(`Risk too large (${riskPips.toFixed(1)}p) — above ${maxRiskPips}p maximum`);
 
@@ -396,10 +404,11 @@ export function generateLondonAsianFakeBreakReversalSignal(candles, opts = {}) {
     asianHigh: +asianRange.high.toFixed(5),
     asianLow: +asianRange.low.toFixed(5),
     weekday,
+    tpRrMultiplier: opts.tpRrMultiplier ?? null,
     reason: `LONDON ASIAN FAKE-BREAK ${direction} — ${breakEvent.breakDirection} break of ${levelName}, ` +
             `closed back inside after ${confirmation.barsAfterBreak} bar(s), entry ${entry.toFixed(5)}, ` +
             `SL ${sl.toFixed(5)}, TP ${Number.isFinite(tp) ? tp.toFixed(5) : 'time-exit'}; ` +
-            `risk ${riskPips.toFixed(1)}p reward ${Number.isFinite(rewardPips) ? rewardPips.toFixed(1) : 'time-exit'}p`,
+            `risk ${riskPips.toFixed(1)}p reward ${Number.isFinite(rewardPips) ? rewardPips.toFixed(1) : `time-exit${opts.tpRrMultiplier ? ` (${opts.tpRrMultiplier}R TP)` : ''}`}p`,
   };
 }
 
