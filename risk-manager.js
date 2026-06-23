@@ -25,6 +25,7 @@ export class RiskManager {
 
     // KES-denominated risk parameters (from config, with defaults)
     this.accountCapitalKES    = this.config.risk.accountCapitalKES;
+    this.balanceUSD           = options.initialBalanceUSD ?? (this.accountCapitalKES / (this.config.risk.usdKesRate ?? 129));
     this.riskPerTradePercent  = this.config.risk.riskPerTradePercent ?? 1;
     this.enforceDailyStopLoss = this.config.risk.enforceDailyStopLoss ?? true;
     this.dailyStopLossKES     = this.config.risk.dailyStopLossKES;
@@ -92,18 +93,20 @@ export class RiskManager {
    * @param {number} usdKesRate  - USD/KES exchange rate (default from config)
    * @returns {number} units (clamped by max leverage)
    */
-  calculateVolume(pair, slPips, currentRate, usdKesRate = this.config.risk.usdKesRate) {
-    return calculateRiskVolume({
+  calculateVolume(pair, slPips, currentRate, usdKesRate = this.config.risk.usdKesRate, convictionMultiplier = 1.0) {
+    const capital = this.balanceUSD * usdKesRate;
+    const base = calculateRiskVolume({
       pair,
       slPips,
       currentRate,
-      accountCapitalKES: this.accountCapitalKES,
+      accountCapitalKES: capital,
       riskPerTradePercent: this.riskPerTradePercent,
       usdKesRate,
       maxLeverage: this.maxLeverage,
       maxPositionSizeUnits: this.config.maxPositionSizeUnits,
       logger: console,
     });
+    return Math.floor(base * convictionMultiplier);
   }
 
 
@@ -128,6 +131,7 @@ export class RiskManager {
   onTradeClosed(tradeId, pnlKES) {
     this.openTradeCount = Math.max(0, this.openTradeCount - 1);
     this.dailyRealizedPnLKES += pnlKES;
+    this.balanceUSD += pnlKES / (this.config.risk.usdKesRate ?? 129);
 
     if (pnlKES >= 0) {
       this.dailyRealizedProfit += pnlKES;

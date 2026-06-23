@@ -270,7 +270,7 @@ async function tickPair(pair, timestamp) {
       return;
     }
 
-    const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry);
+    const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry, undefined, signal.convictionMultiplier ?? 1.0);
     if (units <= 0) return;
 
     const spreadGate = validateExecutionSpread(pair, getState(pair));
@@ -533,7 +533,7 @@ async function armBrokerStopOrder(pair, state, signal) {
       return true;
     }
 
-    const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry);
+    const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry, undefined, signal.convictionMultiplier ?? 1.0);
     if (units <= 0) return true;
 
     const pendingOrder = buildPendingOrder(state, signal, {
@@ -700,7 +700,7 @@ async function executeOrderSignal(pair, state, signal) {
       return { opened: false, keep: true };
     }
 
-    const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry);
+    const units = riskManager.calculateVolume(pair, signal.riskPips, signal.entry, undefined, signal.convictionMultiplier ?? 1.0);
     if (units <= 0) return { opened: false, keep: false };
 
     const res = await icmarkets.openPosition(pair, signal.direction, units, signal.sl, signal.tp, signal.entry);

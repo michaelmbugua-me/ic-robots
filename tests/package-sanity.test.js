@@ -24,7 +24,7 @@ assert.equal(config.backtest.spreadPips, 0.7, "backtest spread default should st
 assert.equal(config.backtest.slippagePips, 0.3, "backtest slippage default should stay conservative and configurable");
 assert.equal(config.risk.riskPerTradePercent, 1.0, "risk per trade should default to 1% live/backtest risk");
 assert.equal(config.strategy.nyAsianContinuation.minBreakPips, 3, "NY Asian continuation should default to the stronger 3-pip break filter");
-assert.equal(config.strategy.nyAsianContinuation.maxRiskPips, 12, "NY Asian continuation should default to the recommended 12-pip max risk window");
+assert.equal(config.strategy.nyAsianContinuation.maxRiskPips, 15, "NY Asian continuation should default to the recommended 15-pip max risk window");
 assert.doesNotMatch(sourceText, /\bema_pullback\b|EMA_SEPARATION_MIN_PIPS|emaSeparationMinPips|generateSignal|detectTrend|hasPullback|hasEarlyTrigger|calcTradeParams/, "removed EMA pullback code should stay removed");
 assert.doesNotMatch(sourceText, /config\.strategy\.(nyOrb|sessionSweep|smashBuy|smashSell)/, "removed dormant strategy config refs should stay removed");
 assert.doesNotMatch(sourceText, /generate(NYOpeningRange|SessionSweep|Smash)/, "removed dormant strategy functions should stay removed");

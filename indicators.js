@@ -193,6 +193,7 @@ export function generateNYAsianContinuationSignal(candles, opts = {}) {
     tp: +tp.toFixed(5),
     riskPips: +riskPips.toFixed(1),
     rewardPips: +(reward / pipSize).toFixed(1),
+    convictionMultiplier: riskPips <= 6 ? 1.25 : riskPips >= 10 ? 0.75 : 1.0,
     setupTime: candle.time,
     strategy: 'ny_asian_continuation',
     sessionKeySuffix: 'ny_asian_continuation',
@@ -377,6 +378,7 @@ export function generateLondonAsianFakeBreakReversalSignal(candles, opts = {}) {
   if (riskPips > maxRiskPips) return NO_SIGNAL(`Risk too large (${riskPips.toFixed(1)}p) — above ${maxRiskPips}p maximum`);
 
   const levelName = breakEvent.brokeUp ? 'asian_high' : 'asian_low';
+  const convictionMultiplier = riskPips <= 6 ? 1.25 : riskPips >= 8 ? 0.75 : 1.0;
   return {
     signal,
     direction,
@@ -386,6 +388,7 @@ export function generateLondonAsianFakeBreakReversalSignal(candles, opts = {}) {
     tp: Number.isFinite(tp) ? +tp.toFixed(5) : null,
     riskPips: +riskPips.toFixed(1),
     rewardPips: Number.isFinite(rewardPips) ? +rewardPips.toFixed(1) : null,
+    convictionMultiplier,
     setupTime: confirmation.candle.time,
     strategy: 'london_asian_fake_break_reversal',
     targetMode,

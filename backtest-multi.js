@@ -253,6 +253,7 @@ async function main() {
         reason: signal.reason,
         riskPips: signal.riskPips,
         rewardPips: signal.rewardPips,
+        convictionMultiplier: signal.convictionMultiplier ?? 1.0,
       });
       return;
     }
@@ -277,6 +278,7 @@ async function main() {
         reason: signal.reason,
         riskPips: signal.riskPips,
         rewardPips: signal.rewardPips,
+        convictionMultiplier: signal.convictionMultiplier ?? 1.0,
       });
       return;
     }
@@ -293,6 +295,7 @@ async function main() {
       ageBars: 0,
       timeExitBars: signal.timeExitBars,
       forceExitUTC: signal.forceExitUTC,
+      convictionMultiplier: signal.convictionMultiplier ?? 1.0,
     });
     if (sessionKey) {
       p.sessionTradeCounts.set(sessionKey, (p.sessionTradeCounts.get(sessionKey) ?? 0) + 1);
@@ -372,6 +375,7 @@ async function main() {
           forceExitUTC: order.forceExitUTC,
           riskPips: order.riskPips,
           rewardPips: order.rewardPips,
+          convictionMultiplier: order.convictionMultiplier ?? 1.0,
         });
         return false;
       }
@@ -403,6 +407,7 @@ async function main() {
           forceExitUTC: order.forceExitUTC,
           riskPips: order.riskPips,
           rewardPips: order.rewardPips,
+          convictionMultiplier: order.convictionMultiplier ?? 1.0,
         });
         return false;
       }
@@ -416,16 +421,19 @@ async function main() {
   }
 
   function calculateBacktestUnits(pair, signal) {
-    return calculateRiskVolume({
+    const capital = balance * USD_KES_RATE;
+    const base = calculateRiskVolume({
       pair,
       slPips: signal.riskPips,
       currentRate: signal.entry,
-      accountCapitalKES: config.risk.accountCapitalKES,
+      accountCapitalKES: capital,
       riskPerTradePercent: config.risk.riskPerTradePercent,
       usdKesRate: USD_KES_RATE,
       maxLeverage: config.risk.maxLeverage,
       maxPositionSizeUnits: config.maxPositionSizeUnits,
     });
+    const mult = signal.convictionMultiplier ?? 1.0;
+    return Math.floor(base * mult);
   }
 
   function resetDailyRiskIfNeeded(dateLike) {
@@ -506,6 +514,7 @@ async function main() {
     updateLondonModuleRisk(exitTime, profit);
     p.tradeHistory.push({
       ...trade,
+      convictionMultiplier: trade.convictionMultiplier ?? 1.0,
       exit: exitPrice,
       exitTime,
       reason,
