@@ -10,15 +10,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         STRATEGY_MODE: 'ny_asian_continuation',
-        TRADING_PAIRS: 'EUR_USD,GBP_USD,USD_JPY',
         SESSION_WINDOW_MODE: 'all_windows',
-        RISK_PER_TRADE_PERCENT: '0.5',
-        ENFORCE_DAILY_STOP_LOSS: 'true',
-        DAILY_STOP_LOSS_KES: '3000',
-        DAILY_PROFIT_TARGET_KES: '5000',
-        NY_ASIAN_REQUIRE_H1_ALIGNMENT: 'true',
-        NY_ASIAN_MAX_RISK_PIPS: '10',
-        NY_ASIAN_RR_RATIO: '1.2'
       },
       args: '--auto-execute',
       error_file: './logs/err.log',
@@ -36,4 +28,3 @@ module.exports = {
     }
   ]
 };
-
