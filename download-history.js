@@ -1,6 +1,6 @@
 /**
  * Historical Data Downloader for IC Markets
- * Fetches EUR_USD candles and saves them to a JSON file.
+ * Fetches EUR_USD candles and saves them to a JSON file..
  */
 
 import fs from "fs";
