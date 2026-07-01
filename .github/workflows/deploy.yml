@@ -39,14 +39,12 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
-            cat > .env << EOF
-CTRADER_CLIENT_ID=${CTRADER_CLIENT_ID}
-CTRADER_CLIENT_SECRET=${CTRADER_CLIENT_SECRET}
-CTRADER_ACCOUNT_ID=${CTRADER_ACCOUNT_ID}
-CTRADER_ACCESS_TOKEN=${CTRADER_ACCESS_TOKEN}
-CTRADER_REFRESH_TOKEN=${CTRADER_REFRESH_TOKEN}
-CTRADER_ENV=demo
-EOF
+            echo "CTRADER_CLIENT_ID=$CTRADER_CLIENT_ID" > .env
+            echo "CTRADER_CLIENT_SECRET=$CTRADER_CLIENT_SECRET" >> .env
+            echo "CTRADER_ACCOUNT_ID=$CTRADER_ACCOUNT_ID" >> .env
+            echo "CTRADER_ACCESS_TOKEN=$CTRADER_ACCESS_TOKEN" >> .env
+            echo "CTRADER_REFRESH_TOKEN=$CTRADER_REFRESH_TOKEN" >> .env
+            echo "CTRADER_ENV=demo" >> .env
 
             if [ -f "package.json" ]; then
               mkdir -p logs
