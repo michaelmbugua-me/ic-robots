@@ -10,8 +10,17 @@ module.exports = {
       ignore_watch: ['node_modules', '*.json', 'history_*.json', 'activity.log'],
       env: {
         NODE_ENV: 'production',
-        STRATEGY_MODE: 'ny_asian_continuation',
+        STRATEGY_MODE: 'combined_ny_london',
         SESSION_WINDOW_MODE: 'all_windows',
+        // ─── London Asian Fake-Break Reversal ───────────────────────────────
+        LONDON_MONITOR_ENABLED: 'true',
+        LONDON_LIVE_EXECUTION_ENABLED: 'true',
+        LONDON_FAKE_BREAK_ALLOWED_PAIRS: 'EUR_USD,USD_JPY',
+        LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS: 'Tue,Wed,Thu',
+        LONDON_FAKE_BREAK_EXCLUDED_PAIR_WEEKDAYS: 'EUR_USD:Thu',
+        LONDON_FAKE_BREAK_TRADE_END_UTC: '9.0',
+        LONDON_MAX_LOSSES_PER_DAY: '1',
+        LONDON_FAKE_BREAK_TARGET_MODE: 'asian_opposite',
       },
       args: '--auto-execute',
       error_file: './logs/err.log',

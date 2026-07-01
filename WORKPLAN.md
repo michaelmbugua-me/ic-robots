@@ -9,13 +9,15 @@
 | USD/JPY | NY Asian Continuation | 1% / trade, 3:1 RR | 7–16 UTC | Live |
 | XAU/USD | NY Asian Continuation | 1% / trade, 3:1 RR | 7–16 UTC, wide windows | Live (PM2: ic-scalping-gold) |
 
-### Combined Backtest (6.5 yr, corrected commissions)
+### Backtest Results (6.5 yr, corrected commissions)
 
-| | Net | Trades | WR | PF | Annualized |
+| Strategy | Net | Trades | WR | PF | Annualized |
 |---|---|---|---|---|---|
-| FX (3 pairs) | $1,160 | 157 | 68% | 2.1 | ~15% |
-| Gold | $2,720 | 249 | 53% | 2.8 | ~35% |
-| **Combined** | **$3,880** | **406** | — | — | **~25%** |
+| FX NY only | $1,160 | 157 | 68% | 2.1 | ~15% |
+| Gold NY | $2,720 | 249 | 53% | 2.8 | ~35% |
+| **FX NY + London** (combined) | **$2,055** | **327** | **58%** | **1.7** | **~27%** |
+| | | | | | |
+| **All (FX+London+Gold)** | **$4,776** | **576** | — | — | **~30%** |
 
 Account: $1,172 (demo) | Deploy: GitHub Actions → VM (appleboy/ssh-action)
 
@@ -27,7 +29,7 @@ Account: $1,172 (demo) | Deploy: GitHub Actions → VM (appleboy/ssh-action)
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 1.1 | London Asian Fake-Break Reversal | Pending | Second uncorrelated strategy on same capital. Combine with NY continuation for smoother equity curve. |
+| 1.1 | London Asian Fake-Break Reversal | **Live** | Combined with NY. EUR/USD + USD/JPY, Tue/Wed/Thu. Candidate B profile. +$895 net over backtest. |
 | 1.2 | Partial Profit Taking (50% at 1:1, rest to 3:1) | Pending | Reduces loser impact, improves psychological experience. |
 | 1.3 | Volatility Regime Filter (skip Gold when ATR top 20%) | Pending | Avoids worst drawdown spikes on Gold. |
 

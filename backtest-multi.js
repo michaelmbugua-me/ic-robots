@@ -135,9 +135,43 @@ async function main() {
         trade.ageBars = (trade.ageBars ?? 0) + 1;
         if (trade.direction === "BUY") {
           if (bidLow <= trade.sl) { closeTrade(pair, trade, trade.sl - slippage, "SL", timestamp); return false; }
+          const partialCfg = config.strategy.nyAsianContinuation;
+          if (partialCfg.partialTpEnabled && !trade.partialTpDone && Number.isFinite(trade.riskPips)) {
+            const partialPrice = trade.entry + trade.riskPips * p.pipSize;
+            const hitPartial = bidHigh >= partialPrice;
+            if (hitPartial) {
+              const fraction = partialCfg.partialTpFraction;
+              const closeUnits = Math.floor(trade.units * fraction);
+              const remainUnits = trade.units - closeUnits;
+              if (closeUnits > 0 && remainUnits > 0) {
+                const partialExit = partialPrice - slippage;
+                closeTrade(pair, { ...trade, units: closeUnits }, partialExit, "PARTIAL_TP", timestamp);
+                trade.units = remainUnits;
+                if (partialCfg.partialTpMoveSlToEntry) trade.sl = trade.entry;
+                trade.partialTpDone = true;
+              }
+            }
+          }
           if (Number.isFinite(trade.tp) && bidHigh >= trade.tp) { closeTrade(pair, trade, trade.tp - slippage, "TP", timestamp); return false; }
         } else {
           if (askHigh >= trade.sl) { closeTrade(pair, trade, trade.sl + slippage, "SL", timestamp); return false; }
+          const partialCfg = config.strategy.nyAsianContinuation;
+          if (partialCfg.partialTpEnabled && !trade.partialTpDone && Number.isFinite(trade.riskPips)) {
+            const partialPrice = trade.entry - trade.riskPips * p.pipSize;
+            const hitPartial = askLow <= partialPrice;
+            if (hitPartial) {
+              const fraction = partialCfg.partialTpFraction;
+              const closeUnits = Math.floor(trade.units * fraction);
+              const remainUnits = trade.units - closeUnits;
+              if (closeUnits > 0 && remainUnits > 0) {
+                const partialExit = partialPrice + slippage;
+                closeTrade(pair, { ...trade, units: closeUnits }, partialExit, "PARTIAL_TP", timestamp);
+                trade.units = remainUnits;
+                if (partialCfg.partialTpMoveSlToEntry) trade.sl = trade.entry;
+                trade.partialTpDone = true;
+              }
+            }
+          }
           if (Number.isFinite(trade.tp) && askLow <= trade.tp) { closeTrade(pair, trade, trade.tp + slippage, "TP", timestamp); return false; }
         }
         if (trade.timeExitBars && trade.ageBars >= trade.timeExitBars) {

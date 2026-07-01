@@ -603,6 +603,15 @@ export class ICMarketsClient {
     });
   }
 
+  async closeTradePartial(positionId, pair, units) {
+    const volume = this._toInternalVolume(pair, Math.abs(units));
+    await this._send(PT.CLOSE_POSITION_REQ, {
+      ctidTraderAccountId: config.ctraderAccountId,
+      positionId:          positionId,
+      volume:              volume,
+    });
+  }
+
   _toInternalVolume(instrument, units) {
     let volume = Math.abs(Number(units) || 0) * 100;
 

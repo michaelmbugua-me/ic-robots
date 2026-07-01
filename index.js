@@ -217,6 +217,7 @@ async function tickPair(pair, timestamp) {
   if (state.cooldownCandlesRemaining > 0) return;
 
   await manageActiveTradeTimeExits(pair, state);
+  await managePartialTpExits(pair, state);
   await processPendingOrders(pair, state, { source: "poll" });
   if (state.activeTrades.length >= config.maxTradesPerPair) return;
   if (!hasAvailableTradeSlot()) return;
@@ -305,6 +306,12 @@ async function tickPair(pair, timestamp) {
     // though icmarkets.openPosition will fetch current market price for reliability.
     const res = await icmarkets.openPosition(pair, action, units, signal.sl, signal.tp, signal.entry);
     if (res && res.positionId) {
+      const partialCfg = config.strategy.nyAsianContinuation;
+      const partialTpPrice = partialCfg.partialTpEnabled && Number.isFinite(signal.riskPips) && signal.riskPips > 0
+        ? action === "BUY"
+          ? signal.entry + signal.riskPips * getPipSize(pair)
+          : signal.entry - signal.riskPips * getPipSize(pair)
+        : null;
       state.activeTrades.push({
         id: String(res.positionId),
         direction: action,
@@ -317,6 +324,9 @@ async function tickPair(pair, timestamp) {
         ageBars: 0,
         timeExitBars: signal.timeExitBars,
         forceExitUTC: signal.forceExitUTC,
+        units,
+        partialTpPrice,
+        partialTpDone: false,
       });
       if (signal.sessionKey) {
         state.sessionTradeCounts.set(signal.sessionKey, (state.sessionTradeCounts.get(signal.sessionKey) ?? 0) + 1);
@@ -760,6 +770,9 @@ async function executeOrderSignal(pair, state, signal) {
         entry: signal.entry, sl: signal.sl, tp: signal.tp,
         strategy: signal.strategy, sessionKey: signal.sessionKey,
         ageBars: 0, timeExitBars: signal.timeExitBars, forceExitUTC: signal.forceExitUTC,
+        units,
+        partialTpPrice: calcPartialTpPrice(pair, signal.direction, signal.entry, signal.riskPips),
+        partialTpDone: false,
       });
       if (signal.sessionKey) {
         state.sessionTradeCounts.set(signal.sessionKey, (state.sessionTradeCounts.get(signal.sessionKey) ?? 0) + 1);
@@ -781,11 +794,12 @@ function adoptFilledPendingOrder(pair, state, order, positionId, fillPrice = nul
   const id = String(positionId);
   if (state.activeTrades.some(trade => trade.id === id)) return;
 
+  const entryPrice = Number.isFinite(Number(fillPrice)) && Number(fillPrice) > 0 ? Number(fillPrice) : order.entry;
   state.activeTrades.push({
     id,
     direction: order.direction,
     pair,
-    entry: Number.isFinite(Number(fillPrice)) && Number(fillPrice) > 0 ? Number(fillPrice) : order.entry,
+    entry: entryPrice,
     plannedEntry: order.entry,
     sl: order.sl,
     tp: order.tp,
@@ -796,6 +810,9 @@ function adoptFilledPendingOrder(pair, state, order, positionId, fillPrice = nul
     forceExitUTC: order.forceExitUTC,
     brokerOrderId: order.brokerOrderId,
     clientOrderId: order.clientOrderId,
+    units: order.units ?? 0,
+    partialTpPrice: calcPartialTpPrice(pair, order.direction, entryPrice, order.riskPips),
+    partialTpDone: false,
   });
 
   state.pendingOrders = state.pendingOrders.filter(pending => {
@@ -892,6 +909,43 @@ async function manageActiveTradeTimeExits(pair, state) {
   }
 }
 
+async function managePartialTpExits(pair, state) {
+  if (!AUTO_EXECUTE || state.activeTrades.length === 0) return;
+  const partialCfg = config.strategy.nyAsianContinuation;
+  if (!partialCfg.partialTpEnabled) return;
+  const latest = normalizeLiveCandle(state.candleCache.at(-1));
+  if (!latest) return;
+
+  for (const trade of state.activeTrades) {
+    if (trade.closing || trade.partialTpDone || !Number.isFinite(trade.partialTpPrice)) continue;
+    const hitPartial = trade.direction === "BUY"
+      ? latest.high >= trade.partialTpPrice
+      : latest.low <= trade.partialTpPrice;
+    if (!hitPartial) continue;
+
+    const fraction = partialCfg.partialTpFraction;
+    const totalUnits = trade.units ?? 0;
+    const closeUnits = Math.floor(totalUnits * fraction);
+    const remainUnits = totalUnits - closeUnits;
+    if (closeUnits <= 0 || remainUnits <= 0) continue;
+
+    console.log(`  🥡  Partial TP ${pair} ${trade.direction} — closing ${closeUnits}/${totalUnits} units at 1:1 RR.`);
+
+    trade.expectingPartialClose = true;
+    try {
+      await icmarkets.closeTradePartial(trade.id, pair, closeUnits);
+      trade.units = remainUnits;
+      trade.partialTpDone = true;
+      if (partialCfg.partialTpMoveSlToEntry) {
+        trade.sl = trade.entry;
+        await icmarkets.amendPositionSLTP(trade.id, trade.entry, trade.tp);
+      }
+    } catch (err) {
+      console.error(`  ❌ Partial TP close failed for ${trade.id}:`, err.message);
+    }
+  }
+}
+
 function normalizeLiveCandle(candle) {
   if (!candle) return null;
   const m = candle.mid ?? candle.bid ?? candle.ask;
@@ -957,6 +1011,13 @@ function handleSpotEvent(payload) {
     .catch(err => console.error(`  ❌ ${pair} live pending trigger error:`, err.message));
 }
 
+function calcPartialTpPrice(pair, direction, entry, riskPips) {
+  const cfg = config.strategy.nyAsianContinuation;
+  if (!cfg.partialTpEnabled || !Number.isFinite(riskPips) || riskPips <= 0) return null;
+  const pipSize = getPipSize(pair);
+  return direction === "BUY" ? entry + riskPips * pipSize : entry - riskPips * pipSize;
+}
+
 function normalizeSpotPrice(value, pair) {
   if (value === undefined || value === null) return null;
   const price = Number(value);
@@ -988,13 +1049,28 @@ function handleExecutionEvent(payload) {
     if (deal && deal.closePositionDetail) {
       const positionId = String(deal.positionId);
       let matchedTrade = null;
-      console.log(`  🔔  Position ${positionId} closed.`);
+      let matchedState = null;
       for (const [, state] of pairState) {
         const found = state.activeTrades.find(t => t.id === positionId);
-        if (found) matchedTrade = found;
-        state.activeTrades = state.activeTrades.filter(t => t.id !== positionId);
+        if (found) { matchedTrade = found; matchedState = state; }
       }
+
       const pnlKES = realizedPnlKES(deal);
+
+      if (matchedTrade?.expectingPartialClose) {
+        delete matchedTrade.expectingPartialClose;
+        console.log(`  🥡  Partial TP confirmed — PnL: ${Number.isFinite(pnlKES) ? pnlKES.toFixed(2) : "?"} KES`);
+        if (Number.isFinite(pnlKES)) {
+          riskManager.onTradePartiallyClosed(positionId, pnlKES, matchedTrade.units);
+        }
+        saveState();
+        return;
+      }
+
+      console.log(`  🔔  Position ${positionId} closed.`);
+      if (matchedState) {
+        matchedState.activeTrades = matchedState.activeTrades.filter(t => t.id !== positionId);
+      }
       if (Number.isFinite(pnlKES)) {
         riskManager.onTradeClosed(positionId, pnlKES);
         if (matchedTrade?.strategy === "london_asian_fake_break_reversal") {
@@ -1006,7 +1082,6 @@ function handleExecutionEvent(payload) {
       if (matchedTrade && config.strategy.cooldownCandlesAfterLoss > 0) {
         const matchedPair = matchedTrade.pair;
         let exitPrice = Number(deal.executionPrice ?? 0);
-        // Scale only if it looks like cTrader int64 and not a high-value instrument
         if (exitPrice > 1000 && matchedPair) {
           const type = getInstrumentType(matchedPair);
           if (type === "forex") exitPrice = exitPrice / 100000;

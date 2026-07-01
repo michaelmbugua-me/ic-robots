@@ -187,6 +187,10 @@ export const config = {
       timeExitBars: envNumber("NY_ASIAN_TIME_EXIT_BARS", 12),
       maxTradesPerSession: envNumber("NY_ASIAN_MAX_TRADES_PER_SESSION", 1),
       lookbackCandles: envNumber("NY_ASIAN_LOOKBACK_CANDLES", 220),
+      partialTpEnabled: envBool("NY_ASIAN_PARTIAL_TP_ENABLED", false),
+      partialTpFraction: envNumber("NY_ASIAN_PARTIAL_TP_FRACTION", 0.5),
+      partialTpTriggerRr: envNumber("NY_ASIAN_PARTIAL_TP_TRIGGER_RR", 1.0),
+      partialTpMoveSlToEntry: envBool("NY_ASIAN_PARTIAL_TP_MOVE_SL_TO_ENTRY", true),
     },
     londonAsianFakeBreakReversal: {
       enabled: true,

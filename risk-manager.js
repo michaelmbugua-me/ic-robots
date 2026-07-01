@@ -126,6 +126,38 @@ export class RiskManager {
   }
 
   /**
+   * Call when a trade is partially closed (e.g. partial take profit).
+   * Updates PnL tracking but keeps openTradeCount unchanged.
+   */
+  onTradePartiallyClosed(tradeId, pnlKES, closedUnits) {
+    this.dailyRealizedPnLKES += pnlKES;
+    this.balanceUSD += pnlKES / (this.config.risk.usdKesRate ?? 129);
+
+    if (pnlKES >= 0) {
+      this.dailyRealizedProfit += pnlKES;
+    } else {
+      this.dailyRealizedLoss += Math.abs(pnlKES);
+    }
+
+    const trade = this.tradeLog.find(t => t.id === tradeId);
+    if (trade) {
+      trade.partialPnLKES = (trade.partialPnLKES || 0) + pnlKES;
+      trade.units = Math.max(0, trade.units - (closedUnits || 0));
+    }
+
+    if (this.enforceDailyStopLoss && this.dailyRealizedLoss >= this.dailyStopLossKES) {
+      this.tradingEnabled = false;
+      console.log(`  🛑 RiskManager: DAILY STOP-LOSS HIT (partial close). Trading disabled until next UTC day.`);
+    }
+    if (this.dailyRealizedProfit >= this.dailyProfitTargetKES) {
+      this.tradingEnabled = false;
+      console.log(`  🎯 RiskManager: DAILY PROFIT TARGET REACHED (partial close). Trading disabled to protect gains.`);
+    }
+
+    this._saveState();
+  }
+
+  /**
    * Call when a trade is closed. pnlKES is the realized P&L in KES.
    */
   onTradeClosed(tradeId, pnlKES) {
