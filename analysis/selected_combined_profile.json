@@ -1,148 +1,728 @@
 {
-  "generatedAtUTC": "2026-05-28T10:11:49.320Z",
+  "generatedAtUTC": "2026-06-30T13:17:54.180Z",
   "selected": {
-    "londonCase": "london_eurusd_usdjpy_cleaned",
-    "brake": "max_1_loss"
+    "nyPairs": [
+      "EUR_USD",
+      "GBP_USD",
+      "USD_JPY"
+    ],
+    "londonPairs": [
+      "EUR_USD",
+      "USD_JPY"
+    ],
+    "londonAllowedWeekdays": [
+      "Wed"
+    ],
+    "londonWindowUTC": "07:00-09:00",
+    "londonMaxLossesPerDay": 1
+  },
+  "cases": [
+    {
+      "key": "ny_selected",
+      "label": "NY only current basket",
+      "env": {
+        "TRADING_PAIRS": "EUR_USD,GBP_USD,USD_JPY",
+        "STRATEGY_MODE": "ny_asian_continuation",
+        "SESSION_WINDOW_MODE": "all_windows"
+      }
+    },
+    {
+      "key": "london_selected",
+      "label": "London selected module only",
+      "env": {
+        "LONDON_MONITOR_ENABLED": "true",
+        "LONDON_FAKE_BREAK_PROFILE": "candidate_b",
+        "LONDON_FAKE_BREAK_TRADE_END_UTC": "9",
+        "LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS": "Wed",
+        "LONDON_FAKE_BREAK_ALLOWED_PAIRS": "EUR_USD,USD_JPY",
+        "LONDON_FAKE_BREAK_TARGET_MODE": "time_exit",
+        "LONDON_MAX_LOSSES_PER_DAY": "1",
+        "LONDON_FAKE_BREAK_MAX_ASIAN_RANGE_PIPS": "60",
+        "TRADING_PAIRS": "EUR_USD,USD_JPY",
+        "STRATEGY_MODE": "london_asian_fake_break_reversal",
+        "SESSION_WINDOW_MODE": "london_only"
+      }
+    },
+    {
+      "key": "combined_selected",
+      "label": "NY basket + selected London",
+      "env": {
+        "LONDON_MONITOR_ENABLED": "true",
+        "LONDON_FAKE_BREAK_PROFILE": "candidate_b",
+        "LONDON_FAKE_BREAK_TRADE_END_UTC": "9",
+        "LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS": "Wed",
+        "LONDON_FAKE_BREAK_ALLOWED_PAIRS": "EUR_USD,USD_JPY",
+        "LONDON_FAKE_BREAK_TARGET_MODE": "time_exit",
+        "LONDON_MAX_LOSSES_PER_DAY": "1",
+        "LONDON_FAKE_BREAK_MAX_ASIAN_RANGE_PIPS": "60",
+        "TRADING_PAIRS": "EUR_USD,GBP_USD,USD_JPY",
+        "STRATEGY_MODE": "combined_ny_london",
+        "SESSION_WINDOW_MODE": "all_windows"
+      }
+    }
+  ],
+  "ny": {
+    "trades": 104,
+    "wins": 73,
+    "losses": 31,
+    "winRate": 70.1923076923077,
+    "grossProfit": 2182.432353416916,
+    "grossLoss": 859.9301408584374,
+    "net": 1322.502212558478,
+    "profitFactor": 2.5379181979111376,
+    "expectancy": 12.716367428446905,
+    "maxConsecutiveLosses": 2
+  },
+  "london": {
+    "trades": 40,
+    "wins": 24,
+    "losses": 16,
+    "winRate": 60,
+    "grossProfit": 784.004655852721,
+    "grossLoss": 320.58396273552694,
+    "net": 463.4206931171942,
+    "profitFactor": 2.445551702470855,
+    "expectancy": 11.585517327929855,
+    "maxConsecutiveLosses": 3
   },
   "combinedTradeStats": {
-    "trades": 71,
-    "wins": 40,
-    "losses": 31,
-    "winRate": 56.33802816901409,
-    "grossProfit": 527.2902173328066,
-    "grossLoss": 332.42289918768944,
-    "net": 194.8673181451174,
-    "profitFactor": 1.5862030522605275,
-    "expectancy": 2.7446101147199635,
-    "maxConsecutiveLosses": 4
+    "trades": 144,
+    "wins": 97,
+    "losses": 47,
+    "winRate": 67.36111111111111,
+    "grossProfit": 3444.460857353058,
+    "grossLoss": 1346.996579630888,
+    "net": 2097.4642777221707,
+    "profitFactor": 2.5571415023911417,
+    "expectancy": 14.565724150848407,
+    "maxConsecutiveLosses": 5
   },
+  "combinedDrawdown": 116.35923678141936,
+  "robustness": {
+    "passed": true,
+    "drawdownDelta": 2.269810045975561,
+    "lossStreakDelta": 3,
+    "checks": {
+      "positiveTradeExpansion": true,
+      "acceptableDrawdownExpansion": true,
+      "acceptableLossStreakExpansion": true,
+      "acceptableMonthStability": true,
+      "leakagePassed": true
+    },
+    "label": "PASS — robust enough for monitor/demo validation"
+  },
+  "stability": {
+    "ny": {
+      "profile": "NY only",
+      "trades": {
+        "trades": 104,
+        "wins": 73,
+        "losses": 31,
+        "winRate": 70.1923076923077,
+        "grossProfit": 2182.432353416916,
+        "grossLoss": 859.9301408584374,
+        "net": 1322.502212558478,
+        "profitFactor": 2.5379181979111376,
+        "expectancy": 12.716367428446905,
+        "maxConsecutiveLosses": 2
+      },
+      "maxDrawdown": 114.0894267354438,
+      "monthly": {
+        "periods": 45,
+        "positivePeriods": 32,
+        "negativePeriods": 13,
+        "positiveRate": 71.11111111111111,
+        "worstPeriod": {
+          "period": "2022-04",
+          "net": -49.518119823609275,
+          "trades": 4,
+          "winRate": 25
+        },
+        "bestPeriod": {
+          "period": "2025-02",
+          "net": 141.78288745551617,
+          "trades": 4,
+          "winRate": 100
+        }
+      },
+      "yearly": {
+        "periods": 5,
+        "positivePeriods": 5,
+        "negativePeriods": 0,
+        "positiveRate": 100,
+        "worstPeriod": {
+          "period": "2022",
+          "net": 50.65854250559018,
+          "trades": 25,
+          "winRate": 52
+        },
+        "bestPeriod": {
+          "period": "2025",
+          "net": 429.32239379487316,
+          "trades": 24,
+          "winRate": 75
+        }
+      }
+    },
+    "london": {
+      "profile": "London selected",
+      "trades": {
+        "trades": 40,
+        "wins": 24,
+        "losses": 16,
+        "winRate": 60,
+        "grossProfit": 784.004655852721,
+        "grossLoss": 320.58396273552694,
+        "net": 463.4206931171942,
+        "profitFactor": 2.445551702470855,
+        "expectancy": 11.585517327929855,
+        "maxConsecutiveLosses": 3
+      },
+      "maxDrawdown": 75.84177980437944,
+      "monthly": {
+        "periods": 29,
+        "positivePeriods": 19,
+        "negativePeriods": 10,
+        "positiveRate": 65.51724137931035,
+        "worstPeriod": {
+          "period": "2022-07",
+          "net": -32.85440980438004,
+          "trades": 2,
+          "winRate": 0
+        },
+        "bestPeriod": {
+          "period": "2023-05",
+          "net": 106.85610545322047,
+          "trades": 3,
+          "winRate": 100
+        }
+      },
+      "yearly": {
+        "periods": 5,
+        "positivePeriods": 5,
+        "negativePeriods": 0,
+        "positiveRate": 100,
+        "worstPeriod": {
+          "period": "2024",
+          "net": 11.70947354336294,
+          "trades": 4,
+          "winRate": 50
+        },
+        "bestPeriod": {
+          "period": "2023",
+          "net": 263.08323892474016,
+          "trades": 13,
+          "winRate": 69.23076923076923
+        }
+      }
+    },
+    "combined": {
+      "profile": "Combined",
+      "trades": {
+        "trades": 144,
+        "wins": 97,
+        "losses": 47,
+        "winRate": 67.36111111111111,
+        "grossProfit": 3444.460857353058,
+        "grossLoss": 1346.996579630888,
+        "net": 2097.4642777221707,
+        "profitFactor": 2.5571415023911417,
+        "expectancy": 14.565724150848407,
+        "maxConsecutiveLosses": 5
+      },
+      "maxDrawdown": 116.35923678141936,
+      "monthly": {
+        "periods": 48,
+        "positivePeriods": 31,
+        "negativePeriods": 17,
+        "positiveRate": 64.58333333333334,
+        "worstPeriod": {
+          "period": "2025-09",
+          "net": -57.51424000000224,
+          "trades": 1,
+          "winRate": 0
+        },
+        "bestPeriod": {
+          "period": "2026-01",
+          "net": 257.79375587755754,
+          "trades": 4,
+          "winRate": 100
+        }
+      },
+      "yearly": {
+        "periods": 5,
+        "positivePeriods": 5,
+        "negativePeriods": 0,
+        "positiveRate": 100,
+        "worstPeriod": {
+          "period": "2022",
+          "net": 73.28614518858345,
+          "trades": 36,
+          "winRate": 50
+        },
+        "bestPeriod": {
+          "period": "2023",
+          "net": 748.8875924740394,
+          "trades": 44,
+          "winRate": 72.72727272727273
+        }
+      }
+    }
+  },
+  "tradeCountIncrease": {
+    "addedTrades": 40,
+    "tradeIncreasePct": 38.46153846153847,
+    "addedNet": 774.9620651636926,
+    "leakageVerdict": "PASS — combined London trades only appear on selected London pairs",
+    "selectedLondonLeakage": []
+  },
+  "moduleBreakdown": [
+    {
+      "pair": "EUR_USD",
+      "module": "london_asian_fake_break_reversal",
+      "trades": 29,
+      "wins": 18,
+      "losses": 11,
+      "winRate": 62.06896551724138,
+      "grossProfit": 741.5550750000384,
+      "grossLoss": 231.63009499999563,
+      "net": 509.92498000004286,
+      "profitFactor": 3.2014625517467943,
+      "expectancy": 17.583620000001478,
+      "maxConsecutiveLosses": 3
+    },
+    {
+      "pair": "USD_JPY",
+      "module": "london_asian_fake_break_reversal",
+      "trades": 11,
+      "wins": 6,
+      "losses": 5,
+      "winRate": 54.54545454545454,
+      "grossProfit": 256.4081338058236,
+      "grossLoss": 167.93393358496024,
+      "net": 88.47420022086334,
+      "profitFactor": 1.52683932503792,
+      "expectancy": 8.043109110987576,
+      "maxConsecutiveLosses": 3
+    },
+    {
+      "pair": "EUR_USD",
+      "module": "ny_asian_continuation",
+      "trades": 36,
+      "wins": 24,
+      "losses": 12,
+      "winRate": 66.66666666666666,
+      "grossProfit": 726.3623300000343,
+      "grossLoss": 331.91727000000094,
+      "net": 394.44506000003327,
+      "profitFactor": 2.188383659578883,
+      "expectancy": 10.956807222223146,
+      "maxConsecutiveLosses": 2
+    },
+    {
+      "pair": "GBP_USD",
+      "module": "ny_asian_continuation",
+      "trades": 30,
+      "wins": 22,
+      "losses": 8,
+      "winRate": 73.33333333333333,
+      "grossProfit": 794.4701100000394,
+      "grossLoss": 292.1791099999814,
+      "net": 502.2910000000581,
+      "profitFactor": 2.7191201657096227,
+      "expectancy": 16.74303333333527,
+      "maxConsecutiveLosses": 2
+    },
+    {
+      "pair": "USD_JPY",
+      "module": "ny_asian_continuation",
+      "trades": 38,
+      "wins": 27,
+      "losses": 11,
+      "winRate": 71.05263157894737,
+      "grossProfit": 925.6652085471225,
+      "grossLoss": 323.3361710459494,
+      "net": 602.329037501173,
+      "profitFactor": 2.8628569626241287,
+      "expectancy": 15.850764144767712,
+      "maxConsecutiveLosses": 2
+    }
+  ],
   "monthlyDistribution": [
     {
-      "month": "2024-12",
+      "month": "2022-03",
       "trades": 1,
       "wins": 0,
       "losses": 1,
-      "net": -11.042436009225536,
+      "net": -29.510149999999978,
       "winRate": 0
     },
     {
-      "month": "2025-01",
-      "trades": 2,
+      "month": "2022-04",
+      "trades": 4,
       "wins": 1,
+      "losses": 3,
+      "net": -49.51811982360928,
+      "winRate": 25
+    },
+    {
+      "month": "2022-05",
+      "trades": 4,
+      "wins": 3,
       "losses": 1,
-      "net": 6.117435566040008,
+      "net": 64.81527267997365,
+      "winRate": 75
+    },
+    {
+      "month": "2022-06",
+      "trades": 4,
+      "wins": 2,
+      "losses": 2,
+      "net": -10.722204477820224,
       "winRate": 50
     },
     {
-      "month": "2025-02",
+      "month": "2022-07",
+      "trades": 3,
+      "wins": 0,
+      "losses": 3,
+      "net": -38.56071229843706,
+      "winRate": 0
+    },
+    {
+      "month": "2022-08",
+      "trades": 7,
+      "wins": 3,
+      "losses": 4,
+      "net": -11.863795005158593,
+      "winRate": 42.857142857142854
+    },
+    {
+      "month": "2022-09",
+      "trades": 3,
+      "wins": 2,
+      "losses": 1,
+      "net": 39.265680000001694,
+      "winRate": 66.66666666666666
+    },
+    {
+      "month": "2022-10",
+      "trades": 3,
+      "wins": 3,
+      "losses": 0,
+      "net": 42.32470107117922,
+      "winRate": 100
+    },
+    {
+      "month": "2022-12",
+      "trades": 7,
+      "wins": 4,
+      "losses": 3,
+      "net": 67.05547304245403,
+      "winRate": 57.14285714285714
+    },
+    {
+      "month": "2023-01",
+      "trades": 3,
+      "wins": 3,
+      "losses": 0,
+      "net": 81.58742000000329,
+      "winRate": 100
+    },
+    {
+      "month": "2023-02",
+      "trades": 4,
+      "wins": 2,
+      "losses": 2,
+      "net": -6.268386553727333,
+      "winRate": 50
+    },
+    {
+      "month": "2023-03",
+      "trades": 7,
+      "wins": 5,
+      "losses": 2,
+      "net": 77.2769373857299,
+      "winRate": 71.42857142857143
+    },
+    {
+      "month": "2023-04",
+      "trades": 6,
+      "wins": 5,
+      "losses": 1,
+      "net": 176.0801621860165,
+      "winRate": 83.33333333333334
+    },
+    {
+      "month": "2023-05",
+      "trades": 8,
+      "wins": 6,
+      "losses": 2,
+      "net": 161.23694742289916,
+      "winRate": 75
+    },
+    {
+      "month": "2023-06",
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "net": 42.43810500000279,
+      "winRate": 100
+    },
+    {
+      "month": "2023-07",
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "net": 34.08239133066571,
+      "winRate": 100
+    },
+    {
+      "month": "2023-08",
+      "trades": 3,
+      "wins": 1,
+      "losses": 2,
+      "net": -0.7964936815187826,
+      "winRate": 33.33333333333333
+    },
+    {
+      "month": "2023-09",
+      "trades": 2,
+      "wins": 0,
+      "losses": 2,
+      "net": -50.3619200000017,
+      "winRate": 0
+    },
+    {
+      "month": "2023-10",
+      "trades": 2,
+      "wins": 1,
+      "losses": 1,
+      "net": -19.610639999992777,
+      "winRate": 50
+    },
+    {
+      "month": "2023-11",
       "trades": 5,
       "wins": 5,
       "losses": 0,
-      "net": 84.12151189062243,
+      "net": 157.5742727925893,
+      "winRate": 100
+    },
+    {
+      "month": "2023-12",
+      "trades": 2,
+      "wins": 2,
+      "losses": 0,
+      "net": 95.64879659137321,
+      "winRate": 100
+    },
+    {
+      "month": "2024-01",
+      "trades": 2,
+      "wins": 1,
+      "losses": 1,
+      "net": -24.263426279171064,
+      "winRate": 50
+    },
+    {
+      "month": "2024-02",
+      "trades": 3,
+      "wins": 1,
+      "losses": 2,
+      "net": -19.29389314628569,
+      "winRate": 33.33333333333333
+    },
+    {
+      "month": "2024-04",
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "net": 21.34440000000359,
+      "winRate": 100
+    },
+    {
+      "month": "2024-05",
+      "trades": 3,
+      "wins": 3,
+      "losses": 0,
+      "net": 79.65309227097912,
+      "winRate": 100
+    },
+    {
+      "month": "2024-06",
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "net": 37.36229884268228,
+      "winRate": 100
+    },
+    {
+      "month": "2024-07",
+      "trades": 2,
+      "wins": 1,
+      "losses": 1,
+      "net": -5.239184999996063,
+      "winRate": 50
+    },
+    {
+      "month": "2024-08",
+      "trades": 3,
+      "wins": 3,
+      "losses": 0,
+      "net": 115.68714634664364,
+      "winRate": 100
+    },
+    {
+      "month": "2024-09",
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "net": 30.969650000003373,
+      "winRate": 100
+    },
+    {
+      "month": "2024-10",
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "net": 7.7672180328987706,
+      "winRate": 100
+    },
+    {
+      "month": "2024-11",
+      "trades": 2,
+      "wins": 2,
+      "losses": 0,
+      "net": 84.14984080179872,
+      "winRate": 100
+    },
+    {
+      "month": "2024-12",
+      "trades": 3,
+      "wins": 1,
+      "losses": 2,
+      "net": -11.429728473966625,
+      "winRate": 33.33333333333333
+    },
+    {
+      "month": "2025-01",
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "net": 35.66353500000353,
+      "winRate": 100
+    },
+    {
+      "month": "2025-02",
+      "trades": 4,
+      "wins": 4,
+      "losses": 0,
+      "net": 165.3954056198566,
       "winRate": 100
     },
     {
       "month": "2025-03",
-      "trades": 6,
-      "wins": 4,
-      "losses": 2,
-      "net": 54.3692996640814,
-      "winRate": 66.66666666666666
-    },
-    {
-      "month": "2025-04",
-      "trades": 6,
+      "trades": 4,
       "wins": 3,
-      "losses": 3,
-      "net": -3.466546725756185,
-      "winRate": 50
-    },
-    {
-      "month": "2025-05",
-      "trades": 8,
-      "wins": 3,
-      "losses": 5,
-      "net": -32.73091025836996,
-      "winRate": 37.5
-    },
-    {
-      "month": "2025-06",
-      "trades": 5,
-      "wins": 3,
-      "losses": 2,
-      "net": -2.90749873168345,
-      "winRate": 60
-    },
-    {
-      "month": "2025-07",
-      "trades": 8,
-      "wins": 6,
-      "losses": 2,
-      "net": 74.22987318438916,
+      "losses": 1,
+      "net": 81.08370545350989,
       "winRate": 75
     },
     {
+      "month": "2025-04",
+      "trades": 4,
+      "wins": 3,
+      "losses": 1,
+      "net": 82.39986945350785,
+      "winRate": 75
+    },
+    {
+      "month": "2025-05",
+      "trades": 4,
+      "wins": 3,
+      "losses": 1,
+      "net": 88.95304987062471,
+      "winRate": 75
+    },
+    {
+      "month": "2025-06",
+      "trades": 2,
+      "wins": 2,
+      "losses": 0,
+      "net": 114.75315000000708,
+      "winRate": 100
+    },
+    {
+      "month": "2025-07",
+      "trades": 5,
+      "wins": 4,
+      "losses": 1,
+      "net": 139.20833436315883,
+      "winRate": 80
+    },
+    {
       "month": "2025-08",
-      "trades": 3,
-      "wins": 1,
-      "losses": 2,
-      "net": 0.8787239944697323,
-      "winRate": 33.33333333333333
+      "trades": 1,
+      "wins": 0,
+      "losses": 1,
+      "net": -45.84400401808481,
+      "winRate": 0
     },
     {
       "month": "2025-09",
-      "trades": 3,
+      "trades": 1,
       "wins": 0,
-      "losses": 3,
-      "net": -35.33286316450055,
+      "losses": 1,
+      "net": -57.51424000000224,
       "winRate": 0
     },
     {
       "month": "2025-10",
-      "trades": 5,
+      "trades": 4,
       "wins": 2,
-      "losses": 3,
-      "net": -0.34207499999636504,
-      "winRate": 40
+      "losses": 2,
+      "net": 11.982545000011825,
+      "winRate": 50
     },
     {
       "month": "2025-11",
-      "trades": 3,
+      "trades": 2,
       "wins": 2,
-      "losses": 1,
-      "net": 14.32102232080396,
-      "winRate": 66.66666666666666
+      "losses": 0,
+      "net": 81.79486500000023,
+      "winRate": 100
     },
     {
       "month": "2025-12",
-      "trades": 3,
-      "wins": 2,
-      "losses": 1,
-      "net": 1.0259794546938963,
-      "winRate": 66.66666666666666
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "net": 44.4250800000044,
+      "winRate": 100
     },
     {
       "month": "2026-01",
-      "trades": 7,
-      "wins": 6,
-      "losses": 1,
-      "net": 75.22709744233057,
-      "winRate": 85.71428571428571
+      "trades": 4,
+      "wins": 4,
+      "losses": 0,
+      "net": 257.79375587755754,
+      "winRate": 100
     },
     {
       "month": "2026-03",
       "trades": 2,
       "wins": 1,
       "losses": 1,
-      "net": -5.133065000001708,
+      "net": -10.544000000005742,
       "winRate": 50
     },
     {
       "month": "2026-04",
-      "trades": 2,
+      "trades": 1,
       "wins": 0,
-      "losses": 2,
-      "net": -22.66953643866394,
+      "losses": 1,
+      "net": -47.509116781805034,
       "winRate": 0
     },
     {
@@ -150,72 +730,55 @@
       "trades": 2,
       "wins": 1,
       "losses": 1,
-      "net": -1.798694044116166,
+      "net": 16.541191825613147,
       "winRate": 50
     }
   ],
-  "selectedCorrelationRow": {
-    "londonCase": "london_eurusd_usdjpy_cleaned",
-    "brake": "max_1_loss",
-    "nyTrades": {
-      "trades": 28,
-      "wins": 22,
-      "losses": 6,
-      "winRate": 78.57142857142857,
-      "net": 134.08927002297918,
-      "profitFactor": 2.909251886818436,
-      "expectancy": 4.788902500820685
-    },
-    "londonTrades": {
-      "trades": 43,
+  "yearlyDistribution": [
+    {
+      "year": "2022",
+      "trades": 36,
       "wins": 18,
-      "losses": 25,
-      "winRate": 41.86046511627907,
-      "net": 60.778048122138124,
-      "profitFactor": 1.2318077760999537,
-      "expectancy": 1.4134429795846075
+      "losses": 18,
+      "net": 73.28614518858345,
+      "winRate": 50
     },
-    "nyDaily": {
-      "activeDays": 27,
-      "greenDays": 21,
-      "redDays": 6,
-      "net": 134.08927002297924,
-      "avgActiveDay": 4.966269260110342,
-      "maxDailyLoss": -11.978165061272197,
-      "maxDailyWin": 19.21537957694177,
-      "maxDrawdown": 25.156947566917665
+    {
+      "year": "2023",
+      "trades": 44,
+      "wins": 32,
+      "losses": 12,
+      "net": 748.8875924740394,
+      "winRate": 72.72727272727273
     },
-    "londonDaily": {
-      "activeDays": 43,
-      "greenDays": 18,
-      "redDays": 25,
-      "net": 60.778048122138124,
-      "avgActiveDay": 1.4134429795846075,
-      "maxDailyLoss": -11.855540470772963,
-      "maxDailyWin": 44.901783145780286,
-      "maxDrawdown": 96.9135422116925
+    {
+      "year": "2024",
+      "trades": 22,
+      "wins": 16,
+      "losses": 6,
+      "net": 316.7074133955901,
+      "winRate": 72.72727272727273
     },
-    "combinedDaily": {
-      "activeDays": 68,
-      "greenDays": 38,
-      "redDays": 30,
-      "net": 194.8673181451174,
-      "avgActiveDay": 2.8656958550752556,
-      "maxDailyLoss": -22.831201351885383,
-      "maxDailyWin": 44.901783145780286,
-      "maxDrawdown": 76.9713176927318
+    {
+      "year": "2025",
+      "trades": 33,
+      "wins": 25,
+      "losses": 8,
+      "net": 742.3012957425977,
+      "winRate": 75.75757575757575
     },
-    "relationship": {
-      "unionDays": 68,
-      "overlapDays": 2,
-      "correlationUnionZeroFilled": 0.04377936591108479,
-      "correlationActiveOverlap": 1,
-      "avgNyOnLondonLosingDays": -0.4569992000000691,
-      "avgNyOnLondonWinningDays": 0.5750188888888216,
-      "bothWin": 1,
-      "bothLose": 1,
-      "londonLoseNyWin": 0,
-      "londonWinNyLose": 0
+    {
+      "year": "2026",
+      "trades": 9,
+      "wins": 6,
+      "losses": 3,
+      "net": 216.28183092135993,
+      "winRate": 66.66666666666666
     }
+  ],
+  "datasetFiles": {
+    "ny_selected": "analysis/ny_selected.json",
+    "london_selected": "analysis/london_selected.json",
+    "combined_selected": "analysis/combined_selected.json"
   }
 }

@@ -1,3 +1,5 @@
+import { getPipSize, getInstrumentType, getLotSize } from "./instrument-utils.js";
+
 export function calculateRiskVolume({
   pair,
   slPips,
@@ -37,7 +39,8 @@ export function calculateRiskVolume({
   }
 
   const pipValueUSD = calculatePipValueUSD(normalizedPair, numericRate);
-  const pipValuePerUnitKES = (pipValueUSD * numericUsdKesRate) / 100_000;
+  const lotSize = getLotSize(normalizedPair);
+  const pipValuePerUnitKES = (pipValueUSD * numericUsdKesRate) / lotSize;
 
   if (!Number.isFinite(pipValuePerUnitKES) || pipValuePerUnitKES <= 0) {
     logger?.error?.(`  ❌ PositionSizing: Invalid pip value (${pipValuePerUnitKES}) for ${normalizedPair}`);
@@ -68,17 +71,25 @@ export function calculateRiskVolume({
 export function calculatePipValueUSD(pair, currentRate) {
   const normalizedPair = String(pair || "");
   const numericRate = Number(currentRate);
-  const pipSize = normalizedPair.includes("JPY") ? 0.01 : 0.0001;
+  const pipSize = getPipSize(normalizedPair);
+  const type = getInstrumentType(normalizedPair);
+  const lotSize = getLotSize(normalizedPair);
 
+  // Non-forex: 1 lot pip value = pipSize * lotSize (e.g., Gold 0.01 * 100 = $1)
+  if (type !== "forex") {
+    return pipSize * lotSize;
+  }
+
+  // Forex: 1 lot = 100,000 units
   if (normalizedPair.endsWith("_USD") || normalizedPair.endsWith("/USD")) {
-    return pipSize * 100_000;
+    return pipSize * lotSize;
   }
 
   if (normalizedPair.startsWith("USD_") || normalizedPair.startsWith("USD/")) {
-    return (pipSize / numericRate) * 100_000;
+    return (pipSize / numericRate) * lotSize;
   }
 
-  return (pipSize / numericRate) * 100_000;
+  return (pipSize / numericRate) * lotSize;
 }
 
 export function calculateNotionalKESPerUnit(pair, currentRate, usdKesRate) {
@@ -88,6 +99,12 @@ export function calculateNotionalKESPerUnit(pair, currentRate, usdKesRate) {
 
   if (!Number.isFinite(numericRate) || numericRate <= 0 || !Number.isFinite(numericUsdKesRate) || numericUsdKesRate <= 0) {
     return Infinity;
+  }
+
+  const type = getInstrumentType(normalizedPair);
+  // All non-forex (metal, index, crypto) are USD-denominated, 1 unit = currentRate USD
+  if (type !== "forex") {
+    return numericRate * numericUsdKesRate;
   }
 
   if (normalizedPair.startsWith("USD_") || normalizedPair.startsWith("USD/")) {

@@ -1,5 +1,6 @@
 module.exports = {
   apps: [
+    // ─── FX Pairs ──────────────────────────────────────────────────────────
     {
       name: 'ic-scalping-bot',
       script: 'index.js',
@@ -25,6 +26,49 @@ module.exports = {
       restart_delay: 4000,
       listen_timeout: 3000,
       shutdown_with_message: true
-    }
+    },
+    // ─── Gold (XAU/USD) ────────────────────────────────────────────────────
+    {
+      name: 'ic-scalping-gold',
+      script: 'index.js',
+      instances: 1,
+      exec_mode: 'fork',
+      watch: false,
+      ignore_watch: ['node_modules', '*.json', 'history_*.json', 'activity.log'],
+      env: {
+        NODE_ENV: 'production',
+        TRADING_PAIRS: 'XAU_USD',
+        STRATEGY_MODE: 'ny_asian_continuation',
+        SESSION_WINDOW_MODE: 'all_windows',
+        NY_ASIAN_MIN_BREAK_PIPS: '100',
+        NY_ASIAN_ENTRY_BUFFER_PIPS: '10',
+        NY_ASIAN_STOP_BUFFER_PIPS: '10',
+        NY_ASIAN_MIN_RISK_PIPS: '200',
+        NY_ASIAN_MAX_RISK_PIPS: '2000',
+        NY_ASIAN_RR_RATIO: '3.0',
+        NY_ASIAN_REQUIRE_H1_ALIGNMENT: 'false',
+        NY_ASIAN_TRADE_START_UTC: '7',
+        NY_ASIAN_TRADE_END_UTC: '16',
+        NY_ASIAN_FORCE_EXIT_UTC: '16',
+        NY_ASIAN_PREFER_AFTER_UTC: '12.5',
+        MAX_SPREAD_PIPS: '100',
+        MAX_SLIPPAGE_PIPS: '5',
+        BACKTEST_SPREAD_PIPS: '40',
+        BACKTEST_SLIPPAGE_PIPS: '5',
+      },
+      args: '--auto-execute',
+      error_file: './logs/gold-err.log',
+      out_file: './logs/gold-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '10s',
+      max_memory_restart: '500M',
+      kill_timeout: 5000,
+      restart_delay: 4000,
+      listen_timeout: 3000,
+      shutdown_with_message: true
+    },
   ]
 };

@@ -101,11 +101,17 @@ export const config = {
     "EUR_JPY": 3,
     "GBP_JPY": 7,
     "NZD_USD": 12,
+    "XAU_USD": 41,
+    "XAG_USD": 42,
+    "BTC_USD": 10026,
+    "ETH_USD": 10029,
+    "US30": 10015,
+    "UK100": 10011,
   },
 
   // ─── Strategy Scope ─────────────────────────────────────────────────────────
   defaultInstrument:   "EUR_USD",
-  tradingPairs: envList("TRADING_PAIRS", ["EUR_USD", "GBP_USD", "USD_JPY", "AUD_USD", "USD_CAD", "NZD_USD"]),
+  tradingPairs: envList("TRADING_PAIRS", ["EUR_USD", "GBP_USD", "USD_JPY"]),
   granularity:         "M5",
   higherTimeframe:     "H1",
   pollIntervalSeconds: 10,

@@ -3,6 +3,8 @@
  * Candle format expected: { mid: { o, h, l, c }, time, ... }
  */
 
+import { getPipSize } from "./instrument-utils.js";
+
 // ─── EMA Calculation ─────────────────────────────────────────────────────────
 
 /**
@@ -114,7 +116,7 @@ export function generateNYAsianContinuationSignal(candles, opts = {}) {
     return NO_SIGNAL('Not enough candles for NY Asian continuation setup');
   }
 
-  const pipSize = opts.isJPY ? 0.01 : 0.0001;
+  const pipSize = opts.pair ? getPipSize(opts.pair) : (opts.isJPY ? 0.01 : 0.0001);
   const norm = candles.map(normalizeCandle);
   if (norm.some(c => !Number.isFinite(c.open) || !Number.isFinite(c.high) || !Number.isFinite(c.low) || !Number.isFinite(c.close) || c.open <= 0 || c.high <= 0 || c.low <= 0 || c.close <= 0)) {
     return NO_SIGNAL('Invalid candle data — NaN or zero prices detected');
@@ -249,7 +251,7 @@ export function generateLondonAsianFakeBreakReversalSignal(candles, opts = {}) {
     return NO_SIGNAL('Not enough candles for London Asian fake-break setup');
   }
 
-  const pipSize = opts.isJPY ? 0.01 : 0.0001;
+  const pipSize = opts.pair ? getPipSize(opts.pair) : (opts.isJPY ? 0.01 : 0.0001);
   const asianRangePips = (asianRange.high - asianRange.low) / pipSize;
   const minAsianRangePips = Number(opts.minAsianRangePips ?? 0);
   const maxAsianRangePips = Number(opts.maxAsianRangePips ?? 0);

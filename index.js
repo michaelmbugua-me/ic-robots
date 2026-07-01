@@ -10,6 +10,7 @@ import { ICMarketsClient } from "./icmarkets.js";
 import { config } from "./config.js";
 import { detectHigherTimeframeTrend, generateLondonAsianFakeBreakReversalSignal, generateNYAsianContinuationSignal } from "./indicators.js";
 import { RiskManager } from "./risk-manager.js";
+import { getPipSize, getPriceDecimals, formatPrice, getInstrumentType } from "./instrument-utils.js";
 
 const STATE_FILE = "state.json";
 const AUTO_EXECUTE = process.argv.includes("--auto-execute");
@@ -35,6 +36,7 @@ const pairState = new Map();
 const symbolIdToPair = new Map();
 const savedActiveTradesById = loadSavedActiveTradesById();
 const savedPendingOrdersById = loadSavedPendingOrdersById();
+const londonModuleRisk = loadSavedLondonModuleRisk();
 let tickInProgress = false;
 
 function getState(pair) {
@@ -133,7 +135,8 @@ async function tick() {
 async function tickPair(pair, timestamp) {
   const state = getState(pair);
   const now   = Date.now();
-  const isJPY = pair.includes("JPY");
+  const pipSize = getPipSize(pair);
+  const instrumentType = getInstrumentType(pair);
 
   // 1. Refresh candles only when a new closed candle can exist.
   const candleCount = Math.max(
@@ -207,7 +210,7 @@ async function tickPair(pair, timestamp) {
 
   // 2. Generate signal
   const activeWindow = getActiveSessionWindowUTC(new Date());
-  const signal = normalizeSignal(generateStrategySignal(pair, state, higherTimeframe, activeWindow, isJPY));
+  const signal = normalizeSignal(generateStrategySignal(pair, state, higherTimeframe, activeWindow));
 
   // Log status every minute
   if (now - (state.lastLogTime || 0) > 60000) {
@@ -232,6 +235,12 @@ async function tickPair(pair, timestamp) {
       `Brake: maxLosses/day=${londonCfg.maxLossesPerDay ?? 0}, maxDailyLossUSD=${londonCfg.maxDailyLossUSD ?? 0} | ` +
       `${signal.reason}`
     );
+    return;
+  }
+
+  const londonGate = canLondonLiveTrade(signal);
+  if (!londonGate.allowed) {
+    console.log(`  ⛔ London module brake blocked ${pair}: ${londonGate.reason}`);
     return;
   }
 
@@ -283,7 +292,22 @@ async function tickPair(pair, timestamp) {
     // though icmarkets.openPosition will fetch current market price for reliability.
     const res = await icmarkets.openPosition(pair, action, units, signal.sl, signal.tp, signal.entry);
     if (res && res.positionId) {
-      state.activeTrades.push({ id: String(res.positionId), direction: action, pair, entry: signal.entry, sl: signal.sl, tp: signal.tp });
+      state.activeTrades.push({
+        id: String(res.positionId),
+        direction: action,
+        pair,
+        entry: signal.entry,
+        sl: signal.sl,
+        tp: signal.tp,
+        strategy: signal.strategy,
+        sessionKey: signal.sessionKey,
+        ageBars: 0,
+        timeExitBars: signal.timeExitBars,
+        forceExitUTC: signal.forceExitUTC,
+      });
+      if (signal.sessionKey) {
+        state.sessionTradeCounts.set(signal.sessionKey, (state.sessionTradeCounts.get(signal.sessionKey) ?? 0) + 1);
+      }
       riskManager.onTradeOpened(String(res.positionId), pair, action, signal.entry, signal.sl, signal.tp, units);
       saveState();
     }
@@ -294,27 +318,27 @@ async function tickPair(pair, timestamp) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function generateStrategySignal(pair, state, higherTimeframe, activeWindow, isJPY) {
+function generateStrategySignal(pair, state, higherTimeframe, activeWindow) {
   const mode = config.strategy.mode;
   if (mode === "combined_ny_london") {
-    return generateCombinedStrategySignal(pair, state, higherTimeframe, activeWindow, isJPY);
+    return generateCombinedStrategySignal(pair, state, higherTimeframe, activeWindow);
   }
 
   if (mode === "london_asian_fake_break_reversal") {
-    return generateLondonMonitorSignal(pair, state, higherTimeframe, activeWindow, isJPY);
+    return generateLondonMonitorSignal(pair, state, higherTimeframe, activeWindow);
   }
 
   if (mode !== "ny_asian_continuation") {
     return noSignal(`${mode} is not supported by live routing`);
   }
 
-  return generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, activeWindow, isJPY);
+  return generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, activeWindow);
 }
 
-function generateCombinedStrategySignal(pair, state, higherTimeframe, activeWindow, isJPY) {
+function generateCombinedStrategySignal(pair, state, higherTimeframe, activeWindow) {
   const signals = [
-    generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, activeWindow, isJPY),
-    generateLondonMonitorSignal(pair, state, higherTimeframe, activeWindow, isJPY),
+    generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, activeWindow),
+    generateLondonMonitorSignal(pair, state, higherTimeframe, activeWindow),
   ].map(normalizeSignal);
 
   const actionable = signals.find(signal => signal.signal !== "none");
@@ -327,7 +351,7 @@ function generateCombinedStrategySignal(pair, state, higherTimeframe, activeWind
   );
 }
 
-function generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, activeWindow, isJPY) {
+function generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, activeWindow) {
   const htfConfig = config.strategy.higherTimeframeTrend ?? {};
   const htfTrend = htfConfig.enabled ? higherTimeframe.trend : null;
 
@@ -345,12 +369,12 @@ function generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, 
     ...cfg,
     asianRange: getAsianRangeFromCandles(state.candleCache, new Date(), cfg),
     higherTimeframeTrend: htfTrend,
-    isJPY,
+    pair,
   });
   return signal.signal === "none" ? { ...signal, strategy: "ny_asian_continuation" } : signal;
 }
 
-function generateLondonMonitorSignal(pair, state, higherTimeframe, activeWindow, isJPY) {
+function generateLondonMonitorSignal(pair, state, higherTimeframe, activeWindow) {
   const cfg = config.strategy.londonAsianFakeBreakReversal ?? {};
   if (!cfg.monitorEnabled) {
     return noSignal(`London fake-break monitor is disabled; set LONDON_MONITOR_ENABLED=true to observe signals`, "london_asian_fake_break_reversal");
@@ -370,18 +394,24 @@ function generateLondonMonitorSignal(pair, state, higherTimeframe, activeWindow,
   }
 
   const now = new Date();
+  const sessionKey = getSessionKey(now, activeWindow);
+  if ((state.sessionTradeCounts.get(sessionKey) ?? 0) >= (cfg.maxTradesPerSession ?? 1)) {
+    return noSignal(`London fake-break max trades reached for ${sessionKey}`, "london_asian_fake_break_reversal");
+  }
+
   const htfConfig = config.strategy.higherTimeframeTrend ?? {};
   const htfTrend = htfConfig.enabled ? higherTimeframe.trend : null;
   const signal = generateLondonAsianFakeBreakReversalSignal(state.candleCache, {
     ...cfg,
     asianRange: getAsianRangeFromCandles(state.candleCache, now, cfg),
     higherTimeframeTrend: htfTrend,
-    isJPY,
+    pair,
   });
 
   if (signal.signal === "none") return { ...signal, strategy: "london_asian_fake_break_reversal" };
   return {
     ...signal,
+    sessionKey,
     monitorOnly: !cfg.liveExecutionEnabled,
     liveExecutionEnabled: Boolean(cfg.liveExecutionEnabled),
     reason: `${signal.reason} | London monitor-only=${!cfg.liveExecutionEnabled}`,
@@ -427,10 +457,10 @@ async function getLiveMidCandles(pair, granularity, count) {
     icmarkets.getCandles(pair, granularity, count, null, null, 1),
     icmarkets.getCandles(pair, granularity, count, null, null, 2),
   ]);
-  return mergeBidAskCandles(bidCandles, askCandles);
+  return mergeBidAskCandles(bidCandles, askCandles, pair);
 }
 
-function mergeBidAskCandles(bidCandles = [], askCandles = []) {
+function mergeBidAskCandles(bidCandles = [], askCandles = [], pair = null) {
   if (!Array.isArray(bidCandles) || !Array.isArray(askCandles)) return [];
 
   const asksByTime = new Map(askCandles.map(candle => [candle.time, candle]));
@@ -447,14 +477,14 @@ function mergeBidAskCandles(bidCandles = [], askCandles = []) {
         time: bidCandle.time,
         complete: Boolean(bidCandle.complete && askCandle.complete),
         volume: Math.max(Number(bidCandle.volume) || 0, Number(askCandle.volume) || 0),
-        bid: formatPriceFields(bid),
-        ask: formatPriceFields(ask),
+        bid: formatPriceFields(bid, pair),
+        ask: formatPriceFields(ask, pair),
         mid: formatPriceFields({
           o: (bid.o + ask.o) / 2,
           h: (bid.h + ask.h) / 2,
           l: (bid.l + ask.l) / 2,
           c: (bid.c + ask.c) / 2,
-        }),
+        }, pair),
       };
     })
     .filter(Boolean);
@@ -472,12 +502,13 @@ function extractPriceFields(candle) {
   return Object.values(prices).every(v => Number.isFinite(v) && v > 0) ? prices : null;
 }
 
-function formatPriceFields(prices) {
+function formatPriceFields(prices, pair) {
+  const d = pair ? getPriceDecimals(pair) : 5;
   return {
-    o: prices.o.toFixed(5),
-    h: prices.h.toFixed(5),
-    l: prices.l.toFixed(5),
-    c: prices.c.toFixed(5),
+    o: prices.o.toFixed(d),
+    h: prices.h.toFixed(d),
+    l: prices.l.toFixed(d),
+    c: prices.c.toFixed(d),
   };
 }
 
@@ -688,6 +719,12 @@ async function expirePendingOrder(pair, order) {
 
 async function executeOrderSignal(pair, state, signal) {
   try {
+    const londonGate = canLondonLiveTrade(signal);
+    if (!londonGate.allowed) {
+      console.log(`  ⛔ London module brake blocked pending ${signal.direction}: ${londonGate.reason}`);
+      return { opened: false, keep: false };
+    }
+
     const gate = riskManager.canTrade();
     if (!gate.allowed) {
       console.log(`  ⛔ Risk gate blocked pending ${signal.direction}: ${gate.reason}`);
@@ -885,17 +922,20 @@ function handleSpotEvent(payload) {
 
   const state = getState(pair);
   const previous = state.latestQuote ?? {};
-  const bid = normalizeSpotPrice(payload.bid) ?? previous.bid;
-  const ask = normalizeSpotPrice(payload.ask) ?? previous.ask;
-  if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0 || ask < bid) return;
+  // Spot events from cTrader are always int64 scaled by 100000
+  const bid = payload.bid != null ? Number(payload.bid) / 100000 : null;
+  const ask = payload.ask != null ? Number(payload.ask) / 100000 : null;
+  const bidVal = Number.isFinite(bid) && bid > 0 ? bid : previous.bid;
+  const askVal = Number.isFinite(ask) && ask > 0 ? ask : previous.ask;
+  if (!Number.isFinite(bidVal) || !Number.isFinite(askVal) || bidVal <= 0 || askVal <= 0 || askVal < bidVal) return;
 
-  const pipSize = pair.includes("JPY") ? 0.01 : 0.0001;
+  const pipSize = getPipSize(pair);
   state.latestQuote = {
     pair,
-    bid,
-    ask,
-    mid: (bid + ask) / 2,
-    spreadPips: (ask - bid) / pipSize,
+    bid: bidVal,
+    ask: askVal,
+    mid: (bidVal + askVal) / 2,
+    spreadPips: (askVal - bidVal) / pipSize,
     timeMs: Date.now(),
   };
 
@@ -904,10 +944,21 @@ function handleSpotEvent(payload) {
     .catch(err => console.error(`  ❌ ${pair} live pending trigger error:`, err.message));
 }
 
-function normalizeSpotPrice(value) {
+function normalizeSpotPrice(value, pair) {
   if (value === undefined || value === null) return null;
   const price = Number(value);
   if (!Number.isFinite(price) || price <= 0) return null;
+
+  // If the price is a small decimal, return as-is.
+  if (price < 100) return price;
+
+  // High-value instruments (Gold, Indices, Crypto) come as doubles — don't scale.
+  if (pair) {
+    const type = getInstrumentType(pair);
+    if (type === "metal" || type === "index" || type === "crypto") return price;
+  }
+
+  // FX pairs: if > 1000, it's cTrader's int64 × 100000.
   return price > 1000 ? price / 100000 : price;
 }
 
@@ -933,13 +984,21 @@ function handleExecutionEvent(payload) {
       const pnlKES = realizedPnlKES(deal);
       if (Number.isFinite(pnlKES)) {
         riskManager.onTradeClosed(positionId, pnlKES);
+        if (matchedTrade?.strategy === "london_asian_fake_break_reversal") {
+          updateLondonModuleRisk(pnlKES);
+        }
       }
       riskManager.syncOpenTradeCount(getOpenTradeCount());
 
       if (matchedTrade && config.strategy.cooldownCandlesAfterLoss > 0) {
+        const matchedPair = matchedTrade.pair;
         let exitPrice = Number(deal.executionPrice ?? 0);
-        if (exitPrice > 1000) exitPrice = exitPrice / 100000;
-        const pipSize = matchedTrade.pair?.includes("JPY") ? 0.01 : 0.0001;
+        // Scale only if it looks like cTrader int64 and not a high-value instrument
+        if (exitPrice > 1000 && matchedPair) {
+          const type = getInstrumentType(matchedPair);
+          if (type === "forex") exitPrice = exitPrice / 100000;
+        }
+        const pipSize = getPipSize(matchedPair || "EUR_USD");
         const epsilon = pipSize * 2;
         if (Math.abs(exitPrice - matchedTrade.sl) <= epsilon) {
           const state = getState(matchedTrade.pair);
@@ -967,7 +1026,7 @@ function handleBrokerPendingOrderEvent(payload) {
     const positionId = payload.position?.positionId ?? payload.deal?.positionId;
     if (!positionId) return;
     let fillPrice = Number(payload.deal?.executionPrice ?? order.executionPrice ?? payload.position?.price ?? 0);
-    if (fillPrice > 1000) fillPrice = fillPrice / 100000;
+    if (fillPrice > 1000 && getInstrumentType(pair) === "forex") fillPrice = fillPrice / 100000;
     adoptFilledPendingOrder(pair, state, pendingOrder, String(positionId), fillPrice);
     console.log(`  ✅ Broker ${pendingOrder.direction} stop filled for ${pair} @ ${Number.isFinite(fillPrice) && fillPrice > 0 ? fillPrice : pendingOrder.entry}.`);
     return;
@@ -1092,7 +1151,7 @@ function saveState() {
     allTrades.push(...state.activeTrades);
     pendingOrders.push(...state.pendingOrders);
   }
-  fs.writeFileSync(STATE_FILE, JSON.stringify({ savedAtUTC: new Date().toISOString(), activeTrades: allTrades, pendingOrders }, null, 2));
+  fs.writeFileSync(STATE_FILE, JSON.stringify({ savedAtUTC: new Date().toISOString(), activeTrades: allTrades, pendingOrders, londonModuleRisk }, null, 2));
 }
 
 function loadSavedActiveTradesById() {
@@ -1121,6 +1180,73 @@ function loadSavedPendingOrdersById() {
     console.error(`  ⚠️  Failed to load pending orders from ${STATE_FILE}: ${err.message}`);
     return new Map();
   }
+}
+
+function loadSavedLondonModuleRisk() {
+  const fallback = {
+    currentDayUTC: new Date().toISOString().slice(0, 10),
+    dailyLosses: 0,
+    dailyLossUSD: 0,
+  };
+  if (!fs.existsSync(STATE_FILE)) return fallback;
+  try {
+    const data = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    const saved = data.londonModuleRisk;
+    if (!saved || typeof saved !== "object") return fallback;
+    if (saved.currentDayUTC !== fallback.currentDayUTC) return fallback;
+    return {
+      currentDayUTC: saved.currentDayUTC,
+      dailyLosses: Number(saved.dailyLosses) || 0,
+      dailyLossUSD: Number(saved.dailyLossUSD) || 0,
+    };
+  } catch (err) {
+    console.error(`  ⚠️  Failed to load London module risk from ${STATE_FILE}: ${err.message}`);
+    return fallback;
+  }
+}
+
+function resetLondonModuleRiskIfNeeded(now = new Date()) {
+  const day = now.toISOString().slice(0, 10);
+  if (londonModuleRisk.currentDayUTC === day) return;
+  londonModuleRisk.currentDayUTC = day;
+  londonModuleRisk.dailyLosses = 0;
+  londonModuleRisk.dailyLossUSD = 0;
+  saveState();
+}
+
+function canLondonLiveTrade(signal, now = new Date()) {
+  if (signal?.strategy !== "london_asian_fake_break_reversal") return { allowed: true, reason: "OK" };
+  resetLondonModuleRiskIfNeeded(now);
+
+  const cfg = config.strategy.londonAsianFakeBreakReversal ?? {};
+  const maxLosses = Number(cfg.maxLossesPerDay ?? 0);
+  if (Number.isFinite(maxLosses) && maxLosses > 0 && londonModuleRisk.dailyLosses >= maxLosses) {
+    return {
+      allowed: false,
+      reason: `max London losses/day reached: ${londonModuleRisk.dailyLosses}/${maxLosses}`,
+    };
+  }
+
+  const maxDailyLossUSD = Number(cfg.maxDailyLossUSD ?? 0);
+  if (Number.isFinite(maxDailyLossUSD) && maxDailyLossUSD > 0 && londonModuleRisk.dailyLossUSD >= maxDailyLossUSD) {
+    return {
+      allowed: false,
+      reason: `max London daily loss reached: $${londonModuleRisk.dailyLossUSD.toFixed(2)}/$${maxDailyLossUSD.toFixed(2)}`,
+    };
+  }
+
+  return { allowed: true, reason: "OK" };
+}
+
+function updateLondonModuleRisk(pnlKES, now = new Date()) {
+  resetLondonModuleRiskIfNeeded(now);
+  const pnlUSD = pnlKES / (config.risk.usdKesRate ?? 129.0);
+  if (pnlUSD <= 0) {
+    londonModuleRisk.dailyLosses += 1;
+    londonModuleRisk.dailyLossUSD += Math.abs(pnlUSD);
+    console.log(`  🛑 London module risk: loss ${londonModuleRisk.dailyLosses}, daily loss $${londonModuleRisk.dailyLossUSD.toFixed(2)}`);
+  }
+  saveState();
 }
 
 function getSessionKey(dateObj, activeWindow) {

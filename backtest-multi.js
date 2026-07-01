@@ -6,6 +6,7 @@ import fs from "fs";
 import { detectHigherTimeframeTrend, generateLondonAsianFakeBreakReversalSignal, generateNYAsianContinuationSignal } from "./indicators.js";
 import { config } from "./config.js";
 import { calculatePipValueUSD, calculateRiskVolume } from "./position-sizing.js";
+import { getPipSize, getInstrumentType, getLotSize } from "./instrument-utils.js";
 
 const INITIAL_BALANCE = config.risk.accountCapitalKES / 129.0;
 const COMMISSION_SIDE_USD = 3.00;
@@ -60,8 +61,7 @@ async function main() {
         higherTimeframeCandles: htfConfig.enabled ? buildHourlyCandles(candles) : [],
         liquidityContext: buildLiquidityContext(candles),
         higherTimeframeIndex: 0,
-        isJPY: pair.includes("JPY"),
-        pipSize: pair.includes("JPY") ? 0.01 : 0.0001,
+        pipSize: getPipSize(pair),
         activeTrades: [],
         pendingOrders: [],
         sessionTradeCounts: new Map(),
@@ -172,7 +172,7 @@ async function main() {
       if (getTotalActiveTrades() >= (config.maxTotalTrades ?? Infinity)) continue;
 
       const sessionKey = getSessionKey(dateObj, activeWindow);
-      const strategyCfg = getActiveStrategyConfig();
+      const strategyCfg = getActiveStrategyConfig(activeWindow);
       const allowedSessions = strategyCfg.allowedSessionNames;
       if (Array.isArray(allowedSessions) && allowedSessions.length > 0 && !allowedSessions.includes(activeWindow.name)) continue;
 
@@ -182,14 +182,16 @@ async function main() {
       const h = dateObj.getUTCHours() + (dateObj.getUTCMinutes() / 60);
       if (h < strategyCfg.tradeStartUTC || h >= strategyCfg.tradeEndUTC) continue;
 
-      if (strategyMode === "london_asian_fake_break_reversal") {
+      if (strategyMode === "london_asian_fake_break_reversal" || (strategyMode === "combined_ny_london" && activeWindow?.name === "london_open")) {
+        const allowedPairs = strategyCfg.allowedPairs;
+        if (Array.isArray(allowedPairs) && allowedPairs.length > 0 && !allowedPairs.includes(pair)) continue;
         const excludedDay = strategyCfg.excludedPairWeekdays?.[pair];
         if (excludedDay && excludedDay === weekdayUTC(dateObj)) continue;
       }
 
       // Signal Generation
       const asianRange = getAsianRangeForSession(p, dateObj);
-      const signal = generateStrategySignal(currentM5Candles, higherTimeframe, p, asianRange);
+      const signal = generateStrategySignal(currentM5Candles, higherTimeframe, p, asianRange, pair);
 
       if (signal.signal === 'none' || p.activeTrades.length >= config.maxTradesPerPair || p.pendingOrders.length > 0) continue;
 
@@ -198,7 +200,7 @@ async function main() {
     }
   }
 
-  function generateStrategySignal(currentM5Candles, higherTimeframe, p, asianRange = null) {
+  function generateStrategySignal(currentM5Candles, higherTimeframe, p, asianRange = null, instrument = null) {
     const htfTrend = htfConfig.enabled ? higherTimeframe.trend : null;
 
     if (strategyMode === "ny_asian_continuation") {
@@ -206,7 +208,7 @@ async function main() {
         ...config.strategy.nyAsianContinuation,
         asianRange,
         higherTimeframeTrend: htfTrend,
-        isJPY: p.isJPY,
+        pair: instrument,
       });
     }
 
@@ -215,8 +217,28 @@ async function main() {
         ...config.strategy.londonAsianFakeBreakReversal,
         asianRange,
         higherTimeframeTrend: htfTrend,
-        isJPY: p.isJPY,
+        pair: instrument,
       });
+    }
+
+    if (strategyMode === "combined_ny_london") {
+      const nySignal = generateNYAsianContinuationSignal(currentM5Candles, {
+        ...config.strategy.nyAsianContinuation,
+        asianRange,
+        higherTimeframeTrend: htfTrend,
+        pair: instrument,
+      });
+      if (nySignal.signal !== "none") return nySignal;
+
+      const londonSignal = generateLondonAsianFakeBreakReversalSignal(currentM5Candles, {
+        ...config.strategy.londonAsianFakeBreakReversal,
+        asianRange,
+        higherTimeframeTrend: htfTrend,
+        pair: instrument,
+      });
+      if (londonSignal.signal !== "none") return londonSignal;
+
+      return { signal: "none", reason: `Combined: NY=${nySignal.reason || "none"} | London=${londonSignal.reason || "none"}` };
     }
 
     return { signal: "none", reason: `Unsupported backtest strategy mode ${strategyMode}` };
@@ -292,6 +314,12 @@ async function main() {
       time,
       pair,
       reason: signal.reason,
+      strategy: signal.strategy,
+      sessionKey,
+      levelName: signal.levelName,
+      levelPrice: signal.levelPrice,
+      riskPips: signal.riskPips,
+      rewardPips: signal.rewardPips,
       ageBars: 0,
       timeExitBars: signal.timeExitBars,
       forceExitUTC: signal.forceExitUTC,
@@ -311,7 +339,11 @@ async function main() {
   }
 
   function canLondonModuleTrade(dateLike) {
-    if (strategyMode !== "london_asian_fake_break_reversal") return true;
+    if (strategyMode === "ny_asian_continuation") return true;
+    if (strategyMode === "combined_ny_london") {
+      const activeWindow = getActiveSessionWindowUTC(new Date(dateLike));
+      if (activeWindow?.name !== "london_open") return true;
+    }
     resetLondonModuleRiskIfNeeded(dateLike);
     const cfg = config.strategy.londonAsianFakeBreakReversal ?? {};
     const maxLosses = Number(cfg.maxLossesPerDay ?? 0);
@@ -333,7 +365,14 @@ async function main() {
   }
 
   function updateLondonModuleRisk(exitTime, profitUSD) {
-    if (strategyMode !== "london_asian_fake_break_reversal") return;
+    if (strategyMode === "ny_asian_continuation") return;
+    if (strategyMode === "combined_ny_london") {
+      const h = new Date(exitTime).getUTCHours() + new Date(exitTime).getUTCMinutes() / 60;
+      const londonCfg = config.strategy.londonAsianFakeBreakReversal ?? {};
+      const lStart = londonCfg.tradeStartUTC ?? 7;
+      const lEnd = londonCfg.tradeEndUTC ?? 10;
+      if (h < lStart || h >= lEnd) return;
+    }
     resetLondonModuleRiskIfNeeded(exitTime);
     if (profitUSD <= 0) {
       londonModuleRisk.dailyLosses += 1;
@@ -502,9 +541,10 @@ async function main() {
     const diff = trade.direction === "BUY" ? (exitPrice - trade.entry) : (trade.entry - exitPrice);
     const pips = diff / p.pipSize;
     const pipValueUSDPerLot = calculatePipValueUSD(pair, exitPrice);
-    const pipValueUSDPerUnit = pipValueUSDPerLot / 100_000;
+    const lotSize = getLotSize(pair);
+    const pipValueUSDPerUnit = pipValueUSDPerLot / lotSize;
     const grossProfit = pips * pipValueUSDPerUnit * trade.units;
-    const commission = COMMISSION_SIDE_USD * 2 * (trade.units / 100_000);
+    const commission = COMMISSION_SIDE_USD * 2 * (trade.units / lotSize);
     const profit = grossProfit - commission;
     balance += profit;
     if (reason === "SL" && config.strategy.cooldownCandlesAfterLoss > 0) {
@@ -587,7 +627,7 @@ async function main() {
     dailyRiskSimulation: {
       blockedDays,
     },
-    londonModuleRiskSimulation: strategyMode === "london_asian_fake_break_reversal" ? {
+    londonModuleRiskSimulation: (strategyMode === "london_asian_fake_break_reversal" || strategyMode === "combined_ny_london") ? {
       maxLossesPerDay: config.strategy.londonAsianFakeBreakReversal?.maxLossesPerDay ?? 0,
       maxDailyLossUSD: config.strategy.londonAsianFakeBreakReversal?.maxDailyLossUSD ?? 0,
       blockedEvaluations: londonModuleRisk.blockedEvaluations,
@@ -723,8 +763,12 @@ function getAsianRangeForSession(pairState, dateObj) {
   };
 }
 
-function getActiveStrategyConfig() {
+function getActiveStrategyConfig(activeWindow = null) {
   if (strategyMode === "london_asian_fake_break_reversal") return config.strategy.londonAsianFakeBreakReversal;
+  if (strategyMode === "combined_ny_london") {
+    if (activeWindow?.name === "london_open") return config.strategy.londonAsianFakeBreakReversal;
+    return config.strategy.nyAsianContinuation;
+  }
   return config.strategy.nyAsianContinuation;
 }
 

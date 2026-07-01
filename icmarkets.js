@@ -20,6 +20,7 @@ import fs from "fs";
 import protobuf from "protobufjs";
 import Long from "long";
 import { config } from "./config.js";
+import { getPipSize, getInstrumentType } from "./instrument-utils.js";
 
 function logConnectionAlert(message) {
   const entry = JSON.stringify({ timestamp: new Date().toISOString(), type: "connection_alert", message }) + "\n";
@@ -574,13 +575,9 @@ export class ICMarketsClient {
     const deal     = result.deal     ?? {};
     const position = result.position ?? {};
 
-    // Note: deal.executionPrice is already a double in some versions, 
-    // but in others it might be int64 scaled by 10^5.
-    // Based on ProtoOADeal definition it is 'optional double executionPrice = 10'.
-    // However, if we get a very large number, we might need to divide it.
     let execPrice = deal.executionPrice ?? 0;
-    if (execPrice > 1000) {
-      // If it's something like 117240, it's scaled int64 (should have been double)
+    // cTrater may return int64 scaled by 100000 for FX pairs.
+    if (execPrice > 1000 && getInstrumentType(instrument) === "forex") {
       execPrice = execPrice / 100000;
     }
 
@@ -730,8 +727,7 @@ export class ICMarketsClient {
             this.off(PT.SPOT_EVENT, onSpot);
             const bid = payload.bid / 100000;
             const ask = payload.ask / 100000;
-            const isJPY = instrument.includes("JPY");
-            const pipSize = isJPY ? 0.01 : 0.0001;
+            const pipSize = getPipSize(instrument);
             const spreadPips = (ask - bid) / pipSize;
             resolve(spreadPips);
           }

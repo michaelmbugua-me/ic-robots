@@ -38,10 +38,16 @@ function send(ws, payloadType, payload) {
   });
 }
 
-// Major forex pairs we care about (in cTrader "EURUSD" format)
-const MAJOR_PAIRS = new Set([
+// Pairs & instruments we care about (in cTrader "EURUSD" format)
+const TARGET_INSTRUMENTS = new Set([
   "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD",
   "USDCHF", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP",
+  // Metals
+  "XAUUSD", "XAGUSD",
+  // Indices
+  "US30", "NAS100", "SPX500", "UK100", "GER40",
+  // Crypto
+  "BTCUSD", "ETHUSD",
 ]);
 
 async function run() {
@@ -106,16 +112,23 @@ async function run() {
   
   for (const sym of symbols) {
     // Strip any slashes or spaces: "EUR/USD" or "EUR USD" → "EURUSD"
-    const clean = (sym.symbolName ?? "").replace(/[^A-Z]/gi, "").toUpperCase();
-    if (MAJOR_PAIRS.has(clean)) {
-      // Convert "EURUSD" → "EUR_USD" for our config format
-      const key = clean.slice(0, 3) + "_" + clean.slice(3);
-      found.push({ key, id: sym.symbolId });
+    const clean = (sym.symbolName ?? "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+    if (TARGET_INSTRUMENTS.has(clean)) {
+      // Convert "EURUSD" → "EUR_USD" for our config format (FX only)
+      let key;
+      if (clean.startsWith("XAU") || clean.startsWith("XAG")) {
+        key = clean.slice(0, 3) + "_" + clean.slice(3); // XAU_USD, XAG_USD
+      } else if (clean.length === 6 && !/^\d/.test(clean)) {
+        key = clean.slice(0, 3) + "_" + clean.slice(3); // EUR_USD, GBP_USD
+      } else {
+        key = clean; // US30, NAS100, BTCUSD, ETHUSD
+      }
+      found.push({ key, id: sym.symbolId, name: sym.symbolName });
     }
   }
 
   if (found.length === 0) {
-    console.log("⚠️  No major forex pairs found. All available symbols:");
+    console.log("⚠️  No target instruments found. All available symbols:");
     for (const sym of symbols.slice(0, 30)) {
       console.log(`  ${sym.symbolId}: ${sym.symbolName}`);
     }
@@ -124,8 +137,8 @@ async function run() {
     console.log("  Copy this block into config.js → ctraderSymbolIds:");
     console.log("═".repeat(54));
     console.log("\nctraderSymbolIds: {");
-    for (const { key, id } of found) {
-      console.log(`  "${key}": ${id},`);
+    for (const { key, id, name } of found) {
+      console.log(`  "${key}": ${id},  // ${name}`);
     }
     console.log("},\n");
     console.log("═".repeat(54) + "\n");
