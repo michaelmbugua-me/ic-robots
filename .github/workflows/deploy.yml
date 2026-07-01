@@ -17,11 +17,11 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           port: ${{ secrets.VM_PORT }}
+          envs: CTRADER_CLIENT_ID,CTRADER_CLIENT_SECRET,CTRADER_ACCOUNT_ID,CTRADER_ACCESS_TOKEN,CTRADER_REFRESH_TOKEN
           script: |
             mkdir -p "$HOME/ic-robots"
             cd "$HOME/ic-robots"
-            
-            # If directory exists but is not a git repo, clean it
+
             if [ -d "ic-markets" ] && [ ! -d "ic-markets/.git" ]; then
               echo "Directory ic-markets exists but is not a git repo. Cleaning..."
               rm -rf ic-markets
@@ -31,7 +31,7 @@ jobs:
               echo "Cloning repository..."
               git clone https://github.com/${{ github.repository }}.git ic-markets
             fi
-            
+
             cd ic-markets
             echo "Current directory: $(pwd)"
             ls -la
@@ -39,20 +39,18 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
-            # Write credentials from GitHub Secrets (not committed to git)
-            cat > .env << 'EOF'
-CTRADER_CLIENT_ID=${{ secrets.CTRADER_CLIENT_ID }}
-CTRADER_CLIENT_SECRET=${{ secrets.CTRADER_CLIENT_SECRET }}
-CTRADER_ACCOUNT_ID=${{ secrets.CTRADER_ACCOUNT_ID }}
-CTRADER_ACCESS_TOKEN=${{ secrets.CTRADER_ACCESS_TOKEN }}
-CTRADER_REFRESH_TOKEN=${{ secrets.CTRADER_REFRESH_TOKEN }}
+            cat > .env << EOF
+CTRADER_CLIENT_ID=${CTRADER_CLIENT_ID}
+CTRADER_CLIENT_SECRET=${CTRADER_CLIENT_SECRET}
+CTRADER_ACCOUNT_ID=${CTRADER_ACCOUNT_ID}
+CTRADER_ACCESS_TOKEN=${CTRADER_ACCESS_TOKEN}
+CTRADER_REFRESH_TOKEN=${CTRADER_REFRESH_TOKEN}
 CTRADER_ENV=demo
 EOF
-            
+
             if [ -f "package.json" ]; then
               mkdir -p logs
               npm install --omit=dev
-              # Delete existing processes to ensure a clean start
               pm2 delete all || true
               pm2 start ecosystem.config.cjs --update-env
               pm2 save
@@ -60,3 +58,9 @@ EOF
               echo "Error: package.json not found in $(pwd)"
               exit 1
             fi
+        env:
+          CTRADER_CLIENT_ID: ${{ secrets.CTRADER_CLIENT_ID }}
+          CTRADER_CLIENT_SECRET: ${{ secrets.CTRADER_CLIENT_SECRET }}
+          CTRADER_ACCOUNT_ID: ${{ secrets.CTRADER_ACCOUNT_ID }}
+          CTRADER_ACCESS_TOKEN: ${{ secrets.CTRADER_ACCESS_TOKEN }}
+          CTRADER_REFRESH_TOKEN: ${{ secrets.CTRADER_REFRESH_TOKEN }}
