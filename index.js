@@ -76,6 +76,19 @@ async function run() {
   await icmarkets.authenticate();
   console.log(`  ✅ Authenticated.`);
 
+  // Fetch actual account balance from broker and update risk manager
+  try {
+    const accountInfo = await icmarkets.getAccount();
+    const liveBalanceUSD = parseFloat(accountInfo.balance);
+    if (Number.isFinite(liveBalanceUSD) && liveBalanceUSD > 0) {
+      riskManager.balanceUSD = liveBalanceUSD;
+      riskManager.accountCapitalKES = liveBalanceUSD * (config.risk.usdKesRate ?? 129);
+      console.log(`  💰 Account balance: $${liveBalanceUSD.toFixed(2)} (${(liveBalanceUSD * (config.risk.usdKesRate ?? 129)).toFixed(0)} KES)`);
+    }
+  } catch (err) {
+    console.warn(`  ⚠️  Could not fetch account balance; using config default ($${(config.risk.accountCapitalKES / (config.risk.usdKesRate ?? 129)).toFixed(2)}).`);
+  }
+
   for (const pair of PAIRS) {
     console.log(`  🔎 Resolving broker symbol for ${pair}...`);
     try {

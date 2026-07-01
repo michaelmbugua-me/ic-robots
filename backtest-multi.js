@@ -544,7 +544,10 @@ async function main() {
     const lotSize = getLotSize(pair);
     const pipValueUSDPerUnit = pipValueUSDPerLot / lotSize;
     const grossProfit = pips * pipValueUSDPerUnit * trade.units;
-    const commission = COMMISSION_SIDE_USD * 2 * (trade.units / lotSize);
+    const normalizedPair = pair.toUpperCase().replace("/", "_");
+    const base = normalizedPair.split("_")[0];
+    const notionalUSD = base === "USD" ? trade.units : trade.units * exitPrice;
+    const commission = (COMMISSION_SIDE_USD / 100_000) * 2 * notionalUSD;
     const profit = grossProfit - commission;
     balance += profit;
     if (reason === "SL" && config.strategy.cooldownCandlesAfterLoss > 0) {

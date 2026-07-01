@@ -129,7 +129,7 @@ export const config = {
 
   // ─── Financial Plan & Risk Management ──────────────────────────────────
   risk: {
-    accountCapitalKES:    250_000,
+    accountCapitalKES:    151_205,
     riskPerTradePercent:  envNumber("RISK_PER_TRADE_PERCENT", 1.0),
     enforceDailyStopLoss: envBool("ENFORCE_DAILY_STOP_LOSS", true),
       dailyStopLossKES: envNumber("DAILY_STOP_LOSS_KES", 12000),
