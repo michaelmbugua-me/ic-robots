@@ -45,6 +45,8 @@ jobs:
             echo "CTRADER_ACCESS_TOKEN=$CTRADER_ACCESS_TOKEN" >> .env
             echo "CTRADER_REFRESH_TOKEN=$CTRADER_REFRESH_TOKEN" >> .env
             echo "CTRADER_ENV=demo" >> .env
+            echo "HTF_REQUIRE_SLOPE=false" >> .env
+            echo "NY_ASIAN_BLOCK_ON_PRIOR_BREAK=false" >> .env
 
             if [ -f "package.json" ]; then
               mkdir -p logs
