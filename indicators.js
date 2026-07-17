@@ -153,7 +153,11 @@ export function generateNYAsianContinuationSignal(candles, opts = {}) {
     return d.toISOString().slice(0, 10) === day && h >= tradeStartUTC && h < tradeEndUTC;
   });
   if (priorNyCandles.some(c => c.high >= asianRange.high + minBreak || c.low <= asianRange.low - minBreak)) {
-    return NO_SIGNAL('NY Asian range already broke earlier this session');
+    const brokeCandle = priorNyCandles.find(c => c.high >= asianRange.high + minBreak || c.low <= asianRange.low - minBreak);
+    const side = brokeCandle.high >= asianRange.high + minBreak ? 'HIGH' : 'LOW';
+    const price = side === 'HIGH' ? brokeCandle.high : brokeCandle.low;
+    const target = side === 'HIGH' ? asianRange.high + minBreak : asianRange.low - minBreak;
+    return NO_SIGNAL(`NY Asian range already broke ${side} at ${price.toFixed(5)} (target ${target.toFixed(5)}) — session dead`);
   }
 
   const brokeHigh = candle.high >= asianRange.high + minBreak && candle.close > asianRange.high;

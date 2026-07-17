@@ -201,7 +201,14 @@ async function tickPair(pair, timestamp) {
     });
   }
 
-  if (state.candleCache.length < 22) return;
+  if (state.candleCache.length < 22) {
+    if (state._loggedCacheWarning !== true) {
+      console.log(`  ⚠️  ${pair} Candle cache too small (${state.candleCache.length}/22 min). Waiting for more data.`);
+      state._loggedCacheWarning = true;
+    }
+    return;
+  }
+  state._loggedCacheWarning = false;
 
   const currentCandleTime = state.candleCache[state.candleCache.length - 1]?.time ?? null;
   if (currentCandleTime && currentCandleTime !== state.lastCandleTime) {
@@ -230,11 +237,11 @@ async function tickPair(pair, timestamp) {
   if (now - (state.lastLogTime || 0) > 60000) {
     console.log(
       `[${timestamp}] ${pair} | Trend: ${upper(signal.trend, "neutral")} | ` +
-      `HTF: ${upper(higherTimeframe.trend, "neutral")} | ` +
+      `HTF: ${upper(higherTimeframe.trend, "neutral")} (${higherTimeframe.reason ?? ""}) | ` +
       `Strategy: ${signal.strategy || config.strategy.mode} | Pending: ${state.pendingOrders.length} | ` +
       `Signal: ${upper(signal.signal, "none")}`
     );
-    if (signal.signal !== 'none' || config.strategy.mode === "london_asian_fake_break_reversal") console.log(`  → ${signal.reason}`);
+    console.log(`  → ${signal.reason}`);
     state.lastLogTime = now;
   }
 
@@ -388,9 +395,27 @@ function generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, 
     return noSignal(`NY Asian continuation max trades reached for ${sessionKey}`, "ny_asian_continuation");
   }
 
+  const asianRange = getAsianRangeFromCandles(state.candleCache, new Date(), cfg);
+  if (!asianRange) {
+    const day = new Date().toISOString().slice(0, 10);
+    const asianStart = cfg.asianStartUTC ?? 0;
+    const asianEnd = cfg.asianEndUTC ?? 7;
+    const asianCandles = state.candleCache.filter(c => {
+      if (c.time.slice(0, 10) !== day) return false;
+      const d = new Date(c.time);
+      const h = d.getUTCHours() + d.getUTCMinutes() / 60;
+      return h >= asianStart && h < asianEnd;
+    });
+    const latestTime = state.candleCache[state.candleCache.length - 1]?.time;
+    if (latestTime !== state._lastAsianDiagnosticTime) {
+      state._lastAsianDiagnosticTime = latestTime;
+      console.log(`  📊 ${pair} Asian range: unavailable (${asianCandles.length}/12 min candles from ${asianStart}:00-${asianEnd}:00 UTC)`);
+    }
+  }
+
   const signal = generateNYAsianContinuationSignal(state.candleCache, {
     ...cfg,
-    asianRange: getAsianRangeFromCandles(state.candleCache, new Date(), cfg),
+    asianRange,
     higherTimeframeTrend: htfTrend,
     pair,
   });

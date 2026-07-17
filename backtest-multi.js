@@ -672,9 +672,55 @@ async function main() {
     } : null,
   };
 
+  const sortedHistory = [...allHistory].sort((a, b) => new Date(a.exitTime || a.time) - new Date(b.exitTime || b.time));
+  const equityCurve = sortedHistory.map(t => Number(t.balance));
+  const peak = [];
+  let currentPeak = INITIAL_BALANCE;
+  for (const eq of equityCurve) {
+    if (eq > currentPeak) currentPeak = eq;
+    peak.push(currentPeak);
+  }
+  const drawdowns = equityCurve.map((eq, i) => eq < peak[i] ? +((peak[i] - eq) / peak[i] * 100).toFixed(2) : 0);
+  const maxDD = Math.max(...drawdowns, 0);
+  const maxDDEnd = drawdowns.indexOf(maxDD);
+
+  let currentDDStart = -1;
+  let maxDDLength = 0;
+  let currentDDLength = 0;
+  for (let i = 0; i < drawdowns.length; i++) {
+    if (drawdowns[i] > 0) {
+      if (currentDDStart === -1) currentDDStart = i;
+      currentDDLength++;
+    } else {
+      if (currentDDLength > maxDDLength) maxDDLength = currentDDLength;
+      currentDDStart = -1;
+      currentDDLength = 0;
+    }
+  }
+  if (currentDDLength > maxDDLength) maxDDLength = currentDDLength;
+
+  let longestWinStreak = 0, longestLossStreak = 0;
+  let currentWin = 0, currentLoss = 0;
+  for (const t of sortedHistory) {
+    if (Number(t.profit) > 0) {
+      currentWin++;
+      currentLoss = 0;
+      if (currentWin > longestWinStreak) longestWinStreak = currentWin;
+    } else {
+      currentLoss++;
+      currentWin = 0;
+      if (currentLoss > longestLossStreak) longestLossStreak = currentLoss;
+    }
+  }
+
   fs.writeFileSync("trades_backtest.json", JSON.stringify(finalStats, null, 2));
 
+  const ddRecoverIdx = drawdowns.findIndex((d, i) => i > maxDDEnd && d === 0);
+  const ddPeakDate = ddRecoverIdx >= 0 ? new Date(sortedHistory[ddRecoverIdx].exitTime || sortedHistory[ddRecoverIdx].time).toISOString().slice(0, 10) : "never";
+  const ddTroughDate = new Date(sortedHistory[maxDDEnd].exitTime || sortedHistory[maxDDEnd].time).toISOString().slice(0, 10);
+
   console.log(`\n  📊 FINAL: $${balance.toFixed(2)} | Trades: ${allHistory.length} | Win Rate: ${finalStats.summary.winRate}%`);
+  console.log(`  📉 Max DD: ${maxDD}% (peak → ${ddTroughDate}, recovered by ${ddPeakDate}, ${maxDDLength} trades) | Consecutive loss: ${longestLossStreak} | Consecutive win: ${longestWinStreak}`);
   console.log(`  📈 Per-pair summary:`);
   for (const [pair, stats] of Object.entries(byPair)) {
     console.log(`     ${pair.padEnd(8)} Trades: ${String(stats.total).padStart(3)} | Win: ${stats.winRate}% | PF: ${stats.profitFactor} | Net: $${stats.netProfit}`);
