@@ -152,7 +152,7 @@ export function generateNYAsianContinuationSignal(candles, opts = {}) {
     const h = d.getUTCHours() + (d.getUTCMinutes() / 60);
     return d.toISOString().slice(0, 10) === day && h >= tradeStartUTC && h < tradeEndUTC;
   });
-  if (priorNyCandles.some(c => c.high >= asianRange.high + minBreak || c.low <= asianRange.low - minBreak)) {
+  if (opts.blockOnPriorBreak !== false && priorNyCandles.some(c => c.high >= asianRange.high + minBreak || c.low <= asianRange.low - minBreak)) {
     const brokeCandle = priorNyCandles.find(c => c.high >= asianRange.high + minBreak || c.low <= asianRange.low - minBreak);
     const side = brokeCandle.high >= asianRange.high + minBreak ? 'HIGH' : 'LOW';
     const price = side === 'HIGH' ? brokeCandle.high : brokeCandle.low;

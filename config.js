@@ -165,10 +165,11 @@ export const config = {
       granularity: "H1",
       emaPeriod: 200,
       lookbackCandles: 250,
-      requireSlope: true,
+      requireSlope: envBool("HTF_REQUIRE_SLOPE", true),
     },
     nyAsianContinuation: {
       enabled: true,
+      blockOnPriorBreak: envBool("NY_ASIAN_BLOCK_ON_PRIOR_BREAK", true),
       allowedSessionNames: envList("NY_ASIAN_ALLOWED_SESSIONS", ["ny_overlap"]),
       asianStartUTC: envNumber("NY_ASIAN_START_UTC", 0),
       asianEndUTC: envNumber("NY_ASIAN_END_UTC", 7),
