@@ -61,6 +61,10 @@ const PT = {
   SYMBOL_BY_ID_RES:    2117,
   GET_ACCOUNTS_BY_ACCESS_TOKEN_REQ: 2149,
   GET_ACCOUNTS_BY_ACCESS_TOKEN_RES: 2150,
+  DEAL_LIST_REQ:       2133,
+  DEAL_LIST_RES:       2134,
+  ORDER_LIST_REQ:      2175,
+  ORDER_LIST_RES:      2176,
 };
 
 // Map of payloadType → Proto message name (for decoding)
@@ -97,6 +101,10 @@ const PT_NAMES = {
   2142: "ProtoOAErrorRes",
   2149: "ProtoOAGetAccountListByAccessTokenReq",
   2150: "ProtoOAGetAccountListByAccessTokenRes",
+  2133: "ProtoOADealListReq",
+  2134: "ProtoOADealListRes",
+  2175: "ProtoOAOrderListReq",
+  2176: "ProtoOAOrderListRes",
 };
 
 // Granularity string → cTrader period integer
@@ -671,15 +679,33 @@ export class ICMarketsClient {
   }
 
   /**
-   * Update SL/TP of an existing position
+   * Update SL/TP of an existing position.
+   * Retries a few times on transient failures (e.g. WebSocket hiccups,
+   * broker rate limits) so a single failed send doesn't silently leave
+   * a position unprotected.
    */
-  async amendPositionSLTP(positionId, stopLoss, takeProfit) {
-    await this._send(PT.AMEND_POSITION_SLTP_REQ, {
+  async amendPositionSLTP(positionId, stopLoss, takeProfit, { retries = 2, retryDelayMs = 1500 } = {}) {
+    const payload = {
       ctidTraderAccountId: config.ctraderAccountId,
       positionId:          positionId,
       stopLoss:            stopLoss ? Number(parseFloat(stopLoss).toFixed(5)) : undefined,
       takeProfit:          takeProfit ? Number(parseFloat(takeProfit).toFixed(5)) : undefined,
-    });
+    };
+
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        await this._send(PT.AMEND_POSITION_SLTP_REQ, payload);
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < retries) {
+          console.warn(`  ⚠️  amendPositionSLTP(${positionId}) attempt ${attempt + 1} failed: ${err.message} — retrying...`);
+          await sleep(retryDelayMs);
+        }
+      }
+    }
+    throw lastErr;
   }
 
   /**
@@ -693,6 +719,38 @@ export class ICMarketsClient {
     return {
       positions: res.position || [],
       orders: res.order || [],
+    };
+  }
+
+  /**
+   * Fetch historical deals (executions) within a time window.
+   * cTrader restricts this request to a max ~1 week window per call.
+   */
+  async getDeals(fromTimestamp, toTimestamp, maxRows = 1000) {
+    const res = await this._send(PT.DEAL_LIST_REQ, {
+      ctidTraderAccountId: Long.fromValue(config.ctraderAccountId),
+      fromTimestamp: Long.fromValue(fromTimestamp),
+      toTimestamp: Long.fromValue(toTimestamp),
+      maxRows,
+    });
+    return {
+      deals: res.deal || [],
+      hasMore: Boolean(res.hasMore),
+    };
+  }
+
+  /**
+   * Fetch historical orders (including rejected/expired/cancelled) within a time window.
+   */
+  async getOrders(fromTimestamp, toTimestamp) {
+    const res = await this._send(PT.ORDER_LIST_REQ, {
+      ctidTraderAccountId: Long.fromValue(config.ctraderAccountId),
+      fromTimestamp: Long.fromValue(fromTimestamp),
+      toTimestamp: Long.fromValue(toTimestamp),
+    });
+    return {
+      orders: res.order || [],
+      hasMore: Boolean(res.hasMore),
     };
   }
 

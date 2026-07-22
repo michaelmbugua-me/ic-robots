@@ -149,6 +149,9 @@ export const config = {
     maxSpreadPips: envNumber("MAX_SPREAD_PIPS", 1.5),
     maxQuoteAgeMs: envNumber("MAX_QUOTE_AGE_MS", 5_000),
     debugOrderPayload: envBool("DEBUG_ORDER_PAYLOAD", false),
+    // How often (ms) the watchdog re-checks open positions still carry their
+    // expected SL/TP on the broker, restoring it automatically if it's missing.
+    protectionCheckIntervalMs: envNumber("PROTECTION_CHECK_INTERVAL_MS", 30_000),
   },
   backtest: {
     spreadPips: envNumber("BACKTEST_SPREAD_PIPS", 0.7),

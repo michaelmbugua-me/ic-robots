@@ -224,6 +224,7 @@ async function tickPair(pair, timestamp) {
   if (state.cooldownCandlesRemaining > 0) return;
 
   await manageActiveTradeTimeExits(pair, state);
+  await verifyTradeProtection(pair, state);
   await managePartialTpExits(pair, state);
   await processPendingOrders(pair, state, { source: "poll" });
   if (state.activeTrades.length >= config.maxTradesPerPair) return;
@@ -932,6 +933,91 @@ async function manageActiveTradeTimeExits(pair, state) {
       console.error(`  ❌ Time-exit close failed for ${trade.id}:`, err.message);
     }
   }
+}
+
+/**
+ * Watchdog: verify every open position still carries its expected SL/TP on
+ * the broker side, and restore it if it has gone missing (e.g. cancelled by
+ * the broker, lost to a WebSocket hiccup, or never confirmed after fill).
+ * This is what prevents a repeat of positions sitting fully unprotected.
+ */
+async function verifyTradeProtection(pair, state) {
+  if (!AUTO_EXECUTE || state.activeTrades.length === 0) return;
+
+  const tradesNeedingProtection = state.activeTrades.filter(t => {
+    if (t.closing) return false;
+    const sl = Number(t.sl);
+    const tp = Number(t.tp);
+    return (Number.isFinite(sl) && sl > 0) || (Number.isFinite(tp) && tp > 0);
+  });
+  if (tradesNeedingProtection.length === 0) return;
+
+  const intervalMs = Number(config.execution?.protectionCheckIntervalMs ?? 30_000);
+  const now = Date.now();
+  if (state.lastProtectionCheckAt && now - state.lastProtectionCheckAt < intervalMs) return;
+  state.lastProtectionCheckAt = now;
+
+  let accountState;
+  try {
+    accountState = await icmarkets.reconcile();
+  } catch (err) {
+    console.error(`  ⚠️  ${pair} protection check: reconcile failed: ${err.message}`);
+    return;
+  }
+
+  const positionsById = new Map((accountState.positions ?? []).map(p => [String(p.positionId), p]));
+  let stateChanged = false;
+
+  for (const trade of tradesNeedingProtection) {
+    const brokerPosition = positionsById.get(trade.id);
+    // Not visible on the broker right now (already closed elsewhere, or a
+    // transient reconcile gap) — execution-event handling deals with closes.
+    if (!brokerPosition) continue;
+
+    const expectedSl = Number(trade.sl);
+    const expectedTp = Number(trade.tp);
+    const brokerSl = Number(brokerPosition.stopLoss) || 0;
+    const brokerTp = Number(brokerPosition.takeProfit) || 0;
+
+    const slMissing = Number.isFinite(expectedSl) && expectedSl > 0 && brokerSl <= 0;
+    const tpMissing = Number.isFinite(expectedTp) && expectedTp > 0 && brokerTp <= 0;
+
+    if (!slMissing && !tpMissing) {
+      if (trade.protectionRetries) { trade.protectionRetries = 0; stateChanged = true; }
+      continue;
+    }
+
+    trade.protectionRetries = (trade.protectionRetries || 0) + 1;
+    stateChanged = true;
+    const missingParts = [
+      slMissing ? `SL (expected ${expectedSl})` : null,
+      tpMissing ? `TP (expected ${expectedTp})` : null,
+    ].filter(Boolean).join(" and ");
+    console.error(
+      `  🚨 PROTECTION MISSING: ${pair} position ${trade.id} is missing ${missingParts}. ` +
+      `Restoring (attempt ${trade.protectionRetries})...`
+    );
+
+    try {
+      await icmarkets.amendPositionSLTP(
+        trade.id,
+        expectedSl > 0 ? expectedSl : undefined,
+        expectedTp > 0 ? expectedTp : undefined,
+      );
+      console.log(`  ✅ ${pair} position ${trade.id} protection restored (SL: ${expectedSl}, TP: ${expectedTp}).`);
+      trade.protectionRetries = 0;
+    } catch (err) {
+      console.error(`  ❌ ${pair} position ${trade.id} protection restore failed (attempt ${trade.protectionRetries}): ${err.message}`);
+      if (trade.protectionRetries >= 3) {
+        console.error(
+          `  🔥 ${pair} position ${trade.id} has been UNPROTECTED for ${trade.protectionRetries} consecutive checks. ` +
+          `MANUAL INTERVENTION REQUIRED — set SL ${expectedSl} / TP ${expectedTp} on the broker now.`
+        );
+      }
+    }
+  }
+
+  if (stateChanged) saveState();
 }
 
 async function managePartialTpExits(pair, state) {
