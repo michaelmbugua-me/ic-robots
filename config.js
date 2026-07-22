@@ -38,7 +38,7 @@ const sessionWindowPresetsUTC = {
     { name: "london_open", start: 7.0, end: 10.0 },
   ],
   all_windows: [
-    { name: "london_open", start: 7.0, end: 10.0 },
+    { name: "london_open", start: 7.0, end: 12.5 },
     { name: "ny_overlap", start: 12.5, end: 16.0 },
   ],
 };
