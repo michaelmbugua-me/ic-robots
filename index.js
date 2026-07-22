@@ -998,13 +998,24 @@ async function verifyTradeProtection(pair, state) {
       `Restoring (attempt ${trade.protectionRetries})...`
     );
 
+    // IMPORTANT: amendPositionSLTP amends both sides of the order together —
+    // omitting a side does not "leave it as is" on the broker, it clears it.
+    // So for the side that isn't actually missing, always resend whatever the
+    // broker already has (which may be a value the user set manually, or set
+    // by an earlier bot instance) instead of `undefined`. Only fall through
+    // to `undefined` if we truly have no value at all for that side.
+    const finalSl = slMissing ? expectedSl : (brokerSl > 0 ? brokerSl : (expectedSl > 0 ? expectedSl : undefined));
+    const finalTp = tpMissing ? expectedTp : (brokerTp > 0 ? brokerTp : (expectedTp > 0 ? expectedTp : undefined));
+
     try {
-      await icmarkets.amendPositionSLTP(
-        trade.id,
-        expectedSl > 0 ? expectedSl : undefined,
-        expectedTp > 0 ? expectedTp : undefined,
-      );
-      console.log(`  ✅ ${pair} position ${trade.id} protection restored (SL: ${expectedSl}, TP: ${expectedTp}).`);
+      await icmarkets.amendPositionSLTP(trade.id, finalSl, finalTp);
+      console.log(`  ✅ ${pair} position ${trade.id} protection restored (SL: ${finalSl ?? "none"}, TP: ${finalTp ?? "none"}).`);
+      // Keep local tracking in sync with whatever we just confirmed on the
+      // broker, so a side we adopted from the broker (not originally tracked
+      // locally) doesn't get treated as "missing" — and therefore cleared —
+      // again on the next check.
+      if (Number.isFinite(finalSl) && finalSl > 0) trade.sl = finalSl;
+      if (Number.isFinite(finalTp) && finalTp > 0) trade.tp = finalTp;
       trade.protectionRetries = 0;
     } catch (err) {
       console.error(`  ❌ ${pair} position ${trade.id} protection restore failed (attempt ${trade.protectionRetries}): ${err.message}`);
@@ -1275,11 +1286,20 @@ async function reconcileAccount(pair) {
       .map(p => {
         const id = String(p.positionId);
         const saved = savedActiveTradesById.get(id) ?? {};
+        const brokerSl = Number(p.stopLoss);
+        const brokerTp = Number(p.takeProfit);
         return {
           ...saved,
           id,
           direction: saved.direction ?? p.tradeData.tradeSide,
           pair,
+          // Fall back to whatever SL/TP the broker already carries for this
+          // position (e.g. set manually, or by a previous bot instance) when
+          // we don't have a locally-saved value. Never default to a bare
+          // 0/undefined here — that would make the protection watchdog treat
+          // an already-protected position as if it needed one side cleared.
+          sl: saved.sl ?? (Number.isFinite(brokerSl) && brokerSl > 0 ? brokerSl : null),
+          tp: saved.tp ?? (Number.isFinite(brokerTp) && brokerTp > 0 ? brokerTp : null),
           brokerReconciled: true,
         };
       });
