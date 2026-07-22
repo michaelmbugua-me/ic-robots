@@ -1,0 +1,196 @@
+{
+  "type": "backtest",
+  "generatedAtUTC": "2026-07-22T06:46:32.445Z",
+  "pairs": [
+    "XAU_USD"
+  ],
+  "profile": {
+    "strategyMode": "ny_asian_continuation",
+    "sessionWindowMode": "all_windows",
+    "sessionWindowsUTC": [
+      {
+        "name": "london_open",
+        "start": 7,
+        "end": 10
+      },
+      {
+        "name": "ny_overlap",
+        "start": 12.5,
+        "end": 16
+      }
+    ],
+    "spreadPips": 40,
+    "slippagePips": 5,
+    "commissionSideUSD": 3,
+    "usdKesRate": 129,
+    "positionSizing": {
+      "model": "shared_kes_risk_volume",
+      "accountCapitalKES": 151205,
+      "riskPerTradePercent": 1,
+      "maxLeverage": 100,
+      "maxPositionSizeUnits": 100000
+    },
+    "dailyRiskSimulation": {
+      "enabled": true,
+      "enforceDailyStopLoss": true,
+      "dailyStopLossKES": 12000,
+      "dailyProfitTargetKES": 20000
+    },
+    "cooldownCandlesAfterLoss": 1,
+    "riskPerTradePercent": 1,
+    "higherTimeframeTrend": {
+      "granularity": "H1",
+      "emaPeriod": 200,
+      "requireSlope": false
+    },
+    "nyAsianContinuation": {
+      "enabled": true,
+      "blockOnPriorBreak": false,
+      "allowedSessionNames": [
+        "ny_overlap"
+      ],
+      "asianStartUTC": 0,
+      "asianEndUTC": 7,
+      "tradeStartUTC": 12.5,
+      "tradeEndUTC": 15.5,
+      "preferAfterUTC": 12.5,
+      "forceExitUTC": 16,
+      "requireH1Alignment": false,
+      "entryBufferPips": 10,
+      "stopBufferPips": 10,
+      "minBreakPips": 100,
+      "minRiskPips": 200,
+      "maxRiskPips": 2000,
+      "rrRatio": 3,
+      "pendingExpiryBars": 3,
+      "timeExitBars": 12,
+      "maxTradesPerSession": 1,
+      "lookbackCandles": 220,
+      "partialTpEnabled": false,
+      "partialTpFraction": 0.5,
+      "partialTpTriggerRr": 1,
+      "partialTpMoveSlToEntry": true
+    },
+    "londonAsianFakeBreakReversal": {
+      "enabled": true,
+      "monitorEnabled": true,
+      "liveExecutionEnabled": true,
+      "profile": "candidate_b",
+      "profileDescription": "Candidate B — opposite Asian range target, 4p break, 2-bar confirmation",
+      "availableProfiles": [
+        "candidate_b",
+        "candidate_a_time_exit"
+      ],
+      "allowedSessionNames": [
+        "london_open"
+      ],
+      "allowedPairs": [
+        "EUR_USD",
+        "USD_JPY"
+      ],
+      "allowedWeekdays": [
+        "Tue",
+        "Wed",
+        "Thu"
+      ],
+      "excludedPairWeekdays": {
+        "EUR_USD": "Thu"
+      },
+      "asianStartUTC": 0,
+      "asianEndUTC": 7,
+      "tradeStartUTC": 7,
+      "tradeEndUTC": 9,
+      "minBreakPips": 4,
+      "confirmBars": 2,
+      "stopBufferPips": 0.5,
+      "minRiskPips": 5,
+      "maxRiskPips": 10,
+      "targetMode": "asian_opposite",
+      "tpRrMultiplier": 0,
+      "h1Filter": "all",
+      "noFadeH1AlignedBreak": false,
+      "minAsianRangePips": 0,
+      "maxAsianRangePips": 60,
+      "minConfirmationBarsAfterBreak": 0,
+      "timeExitBars": 12,
+      "maxTradesPerSession": 1,
+      "maxLossesPerDay": 1,
+      "maxDailyLossUSD": 0,
+      "lookbackCandles": 220
+    }
+  },
+  "trades": [
+    {
+      "direction": "BUY",
+      "entry": 1552.83,
+      "sl": 1548.53,
+      "tp": 1565.53,
+      "units": 1,
+      "time": "2020-01-10T13:35:00.000Z",
+      "setupTime": "2020-01-10T13:30:00.000Z",
+      "pair": "XAU_USD",
+      "reason": "SL",
+      "strategy": "ny_asian_continuation",
+      "sessionKey": "2020-01-10:ny_overlap",
+      "levelName": "asian_high",
+      "levelPrice": 1552.68,
+      "ageBars": 3,
+      "timeExitBars": 12,
+      "forceExitUTC": 16,
+      "riskPips": 425,
+      "rewardPips": 1275,
+      "convictionMultiplier": 0.75,
+      "exit": 1548.48,
+      "exitTime": "2020-01-10T13:50:00.000Z",
+      "grossProfit": -4.349999999999909,
+      "commission": 0.0929088,
+      "profit": -4.442908799999909,
+      "balance": 1167.6888741457365,
+      "pipValueUSDPerLot": 1,
+      "pipValueUSDPerUnit": 0.01,
+      "dailyRisk": {
+        "day": "2020-01-10",
+        "pnlKES": -573.14,
+        "dailyRealizedProfitKES": 0,
+        "dailyRealizedLossKES": 573.14,
+        "tradingEnabled": true
+      }
+    }
+  ],
+  "byPair": {
+    "XAU_USD": {
+      "total": 1,
+      "wins": 0,
+      "losses": 1,
+      "winRate": "0.0",
+      "grossProfit": 0,
+      "grossLoss": 4.44,
+      "netProfit": -4.44,
+      "profitFactor": "0.000",
+      "expectancy": -4.443,
+      "avgWin": 0,
+      "avgLoss": -4.44
+    }
+  },
+  "summary": {
+    "total": 1,
+    "wins": 0,
+    "losses": 1,
+    "winRate": "0.0",
+    "netProfit": -4.442908799999941,
+    "finalBalance": 1167.6888741457365,
+    "dailyRiskSimulation": {
+      "blockedDays": 0,
+      "blockedSignals": 0,
+      "blockedPendingTriggers": 0
+    },
+    "sizing": {
+      "mode": "compounding",
+      "fixedBalanceUSD": null
+    }
+  },
+  "dailyRiskSimulation": {
+    "blockedDays": []
+  },
+  "londonModuleRiskSimulation": null
+}

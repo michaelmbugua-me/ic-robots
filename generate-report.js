@@ -444,15 +444,27 @@ function formatKESJS(val) {
 
 function formatDateJS(dateStr) {
   const date = new Date(dateStr);
-  const day = date.getDate();
-  const month = date.toLocaleString('en-GB', { month: 'short' });
-  const year = date.getFullYear();
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Nairobi',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const get = type => parts.find(part => part.type === type)?.value;
+  const day = Number(get('day'));
+  const month = get('month');
+  const year = get('year');
+  const hour = get('hour');
+  const minute = get('minute');
   const j = day % 10, k = day % 100;
   let suffix = "th";
   if (j === 1 && k !== 11) suffix = "st";
   if (j === 2 && k !== 12) suffix = "nd";
   if (j === 3 && k !== 13) suffix = "rd";
-  return day + suffix + " " + month + " " + year;
+  return day + suffix + " " + month + " " + year + " " + hour + ":" + minute + " EAT";
 }
 
 // 1. Equity Chart

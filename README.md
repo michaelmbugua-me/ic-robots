@@ -103,6 +103,19 @@ STRATEGY_MODE=combined_ny_london
 
 `combined_ny_london` runs both live routers in the same process so account reconciliation, risk gates, trade slots, and local state stay shared. London remains monitor-only unless `LONDON_LIVE_EXECUTION_ENABLED=true` is explicitly set.
 
+### Quick reference: Pip requirements
+
+| Pair type | Stop Loss (pips) | Take Profit (pips) | R:R Ratio |
+|---|---|---|---|
+| **FX** (EUR/USD, GBP/USD, USD/JPY) | 5–15 pips | 7.5–22.5 pips | 1:1.5 |
+| **Gold** (XAU/USD) | 200–2,000 pips | 600–6,000 pips | 1:3.0 |
+
+**Most common FX setups:**
+- 5 pip SL → 7.5 pip TP (333 backtested trades)
+- 10 pip SL → 15 pip TP (247 trades)
+
+**Gold note:** 1 pip = $0.01, so 400 pips = $4.00 SL and 1,200 pips = $12.00 TP
+
 ### Strategy logic
 
 1. Build the Asian range from M5 candles between `NY_ASIAN_START_UTC` and `NY_ASIAN_END_UTC`.
@@ -135,6 +148,28 @@ STRATEGY_MODE=combined_ny_london
     - time exit after `NY_ASIAN_TIME_EXIT_BARS`, default `12`, or
     - force exit after `NY_ASIAN_FORCE_EXIT_UTC`, default `16:00 UTC`.
 
+### Stop loss and take profit ranges
+
+SL and TP are not fixed — they adapt to the width of the Asian range (the breakout setup). Wider ranges produce wider stops and targets; tighter ranges produce tighter ones.
+
+| | FX (EUR/USD, GBP/USD, USD/JPY) | Gold (XAU/USD) |
+|---|---|---|
+| **Stop Loss** | 5–15 pips (avg 8) | 200–2,000 pips (avg 401) |
+| **Take Profit** | 7.5–22.5 pips (avg 12) | 600–6,000 pips (avg 1,203) |
+| **R:R ratio** | 1 : 1.5 (fixed) | 1 : 3.0 (fixed) |
+
+For gold, 1 pip = $0.01, so 400 pips = $4.00 SL and 1,200 pips = $12.00 TP.
+
+Most common FX setups: 5 pip SL / 7.5 pip TP (333 backtested trades), 10 pip SL / 15 pip TP (247 trades).
+
+How SL/TP are determined:
+
+1. The Asian range (high/low between 00:00–07:00 UTC) is measured.
+2. Price must break out of that range by at least 3 pips (FX) or 100 pips (Gold).
+3. The entry is placed just beyond the break (entry + buffer).
+4. The SL is placed on the other side of the break.
+5. The TP is set at `risk × R:R ratio`.
+
 ---
 
 ## Session windows
@@ -154,6 +189,43 @@ Important distinction:
 - `SESSION_WINDOW_MODE` controls when the bot wakes up and evaluates pairs.
 - Strategy-specific allowed-session variables such as `NY_ASIAN_ALLOWED_SESSIONS` and `LONDON_FAKE_BREAK_ALLOWED_SESSIONS` control whether a strategy is allowed to trade in a named active window.
 - By default, `NY_ASIAN_ALLOWED_SESSIONS=ny_overlap`, so London evaluations do not become London trades unless you explicitly change that strategy setting.
+
+---
+
+## Live trading schedule
+
+### FX Process (`ic-scalping-bot`) — EUR/USD, GBP/USD, USD/JPY
+
+**Strategies:**
+- **NY Asian Continuation** — allowed session: `ny_overlap` only → 12:30–16:00 UTC window, signals from 13:00–15:30 UTC (prefer-after filter)
+- **London Fake-Break Reversal** — allowed session: `london_open` → 7:00–9:00 UTC window, pairs: EUR/USD + USD/JPY only
+
+| Day | London (07:00–09:00 UTC) | NY Overlap (13:00–15:30 UTC) |
+|---|---|---|
+| **Mon** | blocked (weekday) | NY continuation — all pairs |
+| **Tue** | London fake-break — EUR/USD, USD/JPY | NY continuation — all pairs |
+| **Wed** | London fake-break — EUR/USD, USD/JPY | NY continuation — all pairs |
+| **Thu** | London fake-break — USD/JPY only (EUR/USD excluded) | NY continuation — all pairs |
+| **Fri** | blocked (weekday) | NY continuation — all pairs |
+| **Sat/Sun** | closed | closed |
+
+GBP/USD is excluded from London entirely (`LONDON_FAKE_BREAK_ALLOWED_PAIRS=EUR_USD,USD_JPY`).
+
+### Gold Process (`ic-scalping-gold`) — XAU/USD
+
+**Strategy:** NY Asian Continuation only, allowed sessions: `london_open` + `ny_overlap`, max 2 trades per session
+
+| Day | London open (07:00–10:00 UTC) | NY Overlap (12:30–16:00 UTC) |
+|---|---|---|
+| **Mon–Fri** | NY continuation (up to 2 trades) | NY continuation (up to 2 trades) |
+| **Sat/Sun** | closed | closed |
+
+### Safety filters active at all times
+- H1 EMA200 trend alignment required (FX only; Gold has it disabled)
+- Max 1 trade per pair per session
+- London module brake: stop after 1 loss per day
+- Daily KES stop-loss and profit-target gates
+- Spread and quote-freshness gates
 
 ---
 
@@ -491,6 +563,8 @@ The backtester:
 - loads local `history_*.json` files,
 - builds H1 candles from M5 data for EMA200 filtering,
 - simulates spread and slippage using `BACKTEST_SPREAD_PIPS` and `BACKTEST_SLIPPAGE_PIPS`,
+- can replay live-style sizing with `BACKTEST_FIXED_BALANCE_USD`, which keeps position sizing fixed instead of compounding wins/losses,
+- can use downloaded tick data with `BACKTEST_INTRABAR_MODE=tick` to resolve SL/TP order inside an M5 candle,
 - applies KES daily risk gates,
 - writes `trades_backtest.json`.
 
@@ -499,6 +573,59 @@ Default simulation costs:
 ```bash
 BACKTEST_SPREAD_PIPS=0.7
 BACKTEST_SLIPPAGE_PIPS=0.3
+```
+
+Live-replay sizing example, useful when comparing a specific real trade against the backtest:
+
+```bash
+BACKTEST_FIXED_BALANCE_USD=1191.99 BACKTEST_START_DATE=2026-07-17 BACKTEST_END_DATE=2026-07-18 npm run backtest:gold
+```
+
+This aligns position sizing and trade eligibility with a live account balance. Exact exits can still differ from live fills when both SL and TP are touched inside the same M5 candle, because the backtest does not have tick-level ordering.
+
+Tick replay example for a specific gold trade window:
+
+```bash
+npm run download:ticks -- --pair XAU_USD --from 2026-07-17T12:40:00Z --to 2026-07-17T13:05:00Z
+BACKTEST_START_DATE=2026-07-17 BACKTEST_END_DATE=2026-07-18 npm run backtest:gold:fixed:tick
+```
+
+`download:ticks` writes daily gzip cache files under `data/ticks/<PAIR>/<YYYY-MM-DD>.json.gz`. By default, it also populates a local SQLite database at `data/ticks.sqlite` for faster multi-year querying.
+
+Tick source configuration:
+
+```bash
+BACKTEST_TICK_SOURCE=sqlite   # default, uses data/ticks.sqlite
+BACKTEST_TICK_SOURCE=files    # uses daily .json.gz cache files
+```
+
+The tick cache must cover the backtest window you want to inspect; if tick data is missing, tick mode falls back to the normal M5 candle sequencing for that interval.
+
+One-command accurate backtest workflow:
+
+```bash
+npm run backtest:accurate -- --preset gold --from 2020-01-01 --to 2020-01-08 --report
+```
+
+This downloads the needed tick cache, validates tick coverage against local M5 history, then runs the backtest with `BACKTEST_INTRABAR_MODE=tick` and `BACKTEST_TICK_MISSING=strict`.
+
+Long-range tick cache example for the main trading universe:
+
+```bash
+npm run backtest:accurate -- --preset all --from 2020-01-01 --to 2026-07-23
+```
+
+Use `BACKTEST_TICK_MISSING=strict` when you want the backtest to fail instead of falling back to M5 candles whenever tick coverage is incomplete.
+
+`--to` is exclusive, so use the next UTC day when downloading a complete final day.
+
+Useful presets:
+
+```bash
+npm run backtest:accurate -- --preset gold --from 2020-01-01 --to 2020-02-01
+npm run backtest:accurate -- --preset gold-fixed --from 2020-01-01 --to 2020-02-01 --fixed-balance 1191.99
+npm run backtest:accurate -- --preset ny --from 2020-01-01 --to 2020-02-01
+npm run backtest:accurate -- --preset all --from 2020-01-01 --to 2020-02-01
 ```
 
 ### Analyze and generate HTML report
@@ -732,9 +859,9 @@ Most values are configured in `config.js`; many can be overridden with environme
 | `NY_ASIAN_ENTRY_BUFFER_PIPS` | `0.5` | Stop entry buffer. |
 | `NY_ASIAN_STOP_BUFFER_PIPS` | `0.5` | Stop loss buffer. |
 | `NY_ASIAN_MIN_BREAK_PIPS` | `3.0` | Minimum clean break beyond Asian range. |
-| `NY_ASIAN_MIN_RISK_PIPS` | `5` | Minimum stop distance. |
-| `NY_ASIAN_MAX_RISK_PIPS` | `12` | Maximum stop distance. |
-| `NY_ASIAN_RR_RATIO` | `1.2` | Reward/risk ratio. |
+| `NY_ASIAN_MIN_RISK_PIPS` | `5` | Minimum stop distance (pips). |
+| `NY_ASIAN_MAX_RISK_PIPS` | `12` | Maximum stop distance (pips). |
+| `NY_ASIAN_RR_RATIO` | `1.2` | Reward/risk ratio (TP = SL × 1.2). |
 | `NY_ASIAN_PENDING_EXPIRY_BARS` | `3` | Pending stop expiry in M5 bars. |
 | `NY_ASIAN_TIME_EXIT_BARS` | `12` | Trade time exit in bars. |
 | `NY_ASIAN_MAX_TRADES_PER_SESSION` | `1` | Per-pair/per-session setup count. |
@@ -775,6 +902,30 @@ Most values are configured in `config.js`; many can be overridden with environme
 |---|---:|---|
 | `BACKTEST_SPREAD_PIPS` | `0.7` | Simulated spread. |
 | `BACKTEST_SLIPPAGE_PIPS` | `0.3` | Simulated slippage. |
+| `BACKTEST_FIXED_BALANCE_USD` | empty | Optional fixed USD balance for live-replay sizing; when set, trade P&L is still recorded but does not compound position size. |
+| `BACKTEST_INTRABAR_MODE` | `conservative` | Use `tick` to replay downloaded daily tick cache data inside each M5 candle. Missing ticks fall back to conservative M5 sequencing unless strict mode is enabled. |
+| `BACKTEST_TICK_CACHE_DIR` | `data/ticks` | Directory containing daily tick cache files created by `download:ticks`. |
+| `BACKTEST_TICK_MISSING` | `fallback` | Use `strict` to fail the backtest when tick data is missing instead of falling back to M5 sequencing. |
+
+### Gold (XAU/USD) pip settings
+
+Gold uses different pip values than FX pairs. These are set via environment variables in PM2 or npm scripts:
+
+| Variable | Gold Value | FX Default | Notes |
+|---|---:|---:|---|
+| `NY_ASIAN_MIN_BREAK_PIPS` | `100` | `3.0` | Minimum clean break beyond Asian range |
+| `NY_ASIAN_ENTRY_BUFFER_PIPS` | `10` | `0.5` | Entry buffer pips |
+| `NY_ASIAN_STOP_BUFFER_PIPS` | `10` | `0.5` | Stop loss buffer pips |
+| `NY_ASIAN_MIN_RISK_PIPS` | `200` | `5` | Minimum stop distance |
+| `NY_ASIAN_MAX_RISK_PIPS` | `2000` | `12` | Maximum stop distance |
+| `NY_ASIAN_RR_RATIO` | `3.0` | `1.2` | Reward/risk ratio |
+| `BACKTEST_SPREAD_PIPS` | `40` | `0.7` | Simulated spread |
+| `BACKTEST_SLIPPAGE_PIPS` | `5` | `0.3` | Simulated slippage |
+
+**Quick reference:**
+- Gold: 200 pip SL → 600 pip TP (R:R 1:3)
+- Gold: 400 pip SL → 1,200 pip TP (R:R 1:3)
+- 1 pip = $0.01 for gold, so 400 pips = $4.00
 
 ---
 

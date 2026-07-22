@@ -153,6 +153,8 @@ export const config = {
   backtest: {
     spreadPips: envNumber("BACKTEST_SPREAD_PIPS", 0.7),
     slippagePips: envNumber("BACKTEST_SLIPPAGE_PIPS", 0.3),
+    fixedBalanceUSD: envNumber("BACKTEST_FIXED_BALANCE_USD", null),
+    intrabarMode: process.env.BACKTEST_INTRABAR_MODE || "conservative",
   },
 
   strategy: {

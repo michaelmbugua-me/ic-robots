@@ -51,6 +51,8 @@ const PT = {
   RECONCILE_RES:       2125,
   GET_TRENDBARS_REQ:   2137,
   GET_TRENDBARS_RES:   2138,
+  GET_TICKDATA_REQ:    2145,
+  GET_TICKDATA_RES:    2146,
   CLOSE_POSITION_REQ:  2111,
   AMEND_POSITION_SLTP_REQ: 2110,
   SYMBOLS_LIST_REQ:    2114,
@@ -88,6 +90,8 @@ const PT_NAMES = {
   2132: "ProtoOAOrderErrorEvent",
   2137: "ProtoOAGetTrendbarsReq",
   2138: "ProtoOAGetTrendbarsRes",
+  2145: "ProtoOAGetTickDataReq",
+  2146: "ProtoOAGetTickDataRes",
   2110: "ProtoOAAmendPositionSLTPReq",
   2111: "ProtoOAClosePositionReq",
   2142: "ProtoOAErrorRes",
@@ -307,6 +311,45 @@ export class ICMarketsClient {
         },
       };
     });
+  }
+
+  async getTicks(instrument, fromTimestamp, toTimestamp, quoteType = 1) {
+    const symbolId = this._resolveSymbolId(instrument);
+    const res = await this._send(PT.GET_TICKDATA_REQ, {
+      ctidTraderAccountId: config.ctraderAccountId,
+      symbolId,
+      type: quoteType, // 1 = BID, 2 = ASK
+      fromTimestamp,
+      toTimestamp,
+    });
+
+    const rawTicks = res.tickData ?? [];
+    if (rawTicks.length === 0) return { ticks: [], hasMore: Boolean(res.hasMore) };
+
+    const D = 100000;
+    let timestamp = Number(rawTicks[0].timestamp);
+    let price = Number(rawTicks[0].tick);
+    const ticks = [];
+    for (let i = 0; i < rawTicks.length; i++) {
+      const tick = rawTicks[i];
+      if (i === 0) {
+        timestamp = Number(tick.timestamp);
+        price = Number(tick.tick);
+      } else {
+        timestamp -= Math.abs(Number(tick.timestamp));
+        price += Number(tick.tick);
+      }
+      ticks.push({
+        time: new Date(timestamp).toISOString(),
+        timestamp,
+        price: price / D,
+      });
+    }
+
+    return {
+      ticks: ticks.sort((a, b) => a.timestamp - b.timestamp),
+      hasMore: Boolean(res.hasMore),
+    };
   }
 
   // ─── Account ───────────────────────────────────────────────────────────────

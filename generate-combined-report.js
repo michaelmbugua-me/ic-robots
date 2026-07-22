@@ -107,15 +107,43 @@ function generate() {
 
   const fxData = JSON.parse(fs.readFileSync(FX_FILE, "utf8"));
   const goldData = JSON.parse(fs.readFileSync(GOLD_FILE, "utf8"));
-  const fxTrades = fxData.trades || [];
-  const goldTrades = goldData.trades || [];
+  const sortByTime = (a, b) => new Date(a.exitTime || a.time || 0) - new Date(b.exitTime || b.time || 0);
+  const fxTrades = (fxData.trades || []).slice().sort(sortByTime);
+  const goldTrades = (goldData.trades || []).slice().sort(sortByTime);
 
-  const combinedTrades = [...fxTrades, ...goldTrades]
-    .sort((a, b) => new Date(a.exitTime || a.time || 0) - new Date(b.exitTime || b.time || 0))
-    .map((t, i, arr) => {
-      const prevBal = i > 0 ? arr[i - 1].balance : (t.balance - t.profit);
-      return { ...t, balance: prevBal + t.profit };
-    });
+  // Build independent cumulative P&L for each strategy, then combine.
+  // Both backtests start with the same initial capital but run independently.
+  // The combined balance = initBalance + fxCumulative + goldCumulative.
+  const initBal = (fxTrades[0]?.balance ?? 1172) - (fxTrades[0]?.profit ?? 0);
+  const fxCumulative = new Map();
+  let fxCum = 0;
+  for (const t of fxTrades) {
+    fxCum += t.profit;
+    fxCumulative.set(t.exitTime || t.time, fxCum);
+  }
+  const goldCumulative = new Map();
+  let goldCum = 0;
+  for (const t of goldTrades) {
+    goldCum += t.profit;
+    goldCumulative.set(t.exitTime || t.time, goldCum);
+  }
+
+  // Sort all trades by time, then assign combined balance = initBal + fxCumSoFar + goldCumSoFar
+  const allTrades = [...fxTrades.map(t => ({ ...t, _strategy: 'fx' })),
+                     ...goldTrades.map(t => ({ ...t, _strategy: 'gold' }))]
+    .sort((a, b) => new Date(a.exitTime || a.time || 0) - new Date(b.exitTime || b.time || 0));
+
+  let fxCumSoFar = 0;
+  let goldCumSoFar = 0;
+  const combinedTrades = allTrades.map(t => {
+    const key = t.exitTime || t.time;
+    if (t._strategy === 'fx') {
+      fxCumSoFar += t.profit;
+    } else {
+      goldCumSoFar += t.profit;
+    }
+    return { ...t, balance: initBal + fxCumSoFar + goldCumSoFar };
+  });
 
   const fxStats = computeStats(fxTrades);
   const goldStats = computeStats(goldTrades);

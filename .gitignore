@@ -14,3 +14,7 @@ trades_backtest_*.json
 report.html
 report_*.html
 mode_compare_*.json
+data/ticks/
+data/ticks.sqlite
+data/ticks.sqlite-journal
+data/ticks.sqlite-wal

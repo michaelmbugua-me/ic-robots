@@ -3,16 +3,34 @@
  */
 
 import fs from "fs";
+import path from "path";
+import zlib from "zlib";
+import { TickDatabase } from "./tick-db.js";
 import { detectHigherTimeframeTrend, generateLondonAsianFakeBreakReversalSignal, generateNYAsianContinuationSignal } from "./indicators.js";
 import { config } from "./config.js";
 import { calculatePipValueUSD, calculateRiskVolume } from "./position-sizing.js";
 import { getPipSize, getInstrumentType, getLotSize } from "./instrument-utils.js";
 
-const INITIAL_BALANCE = config.risk.accountCapitalKES / 129.0;
 const COMMISSION_SIDE_USD = 3.00;
 const SPREAD_PIPS = config.backtest?.spreadPips ?? 0.5;
 const SLIPPAGE_PIPS = config.backtest?.slippagePips ?? 0.2;
 const USD_KES_RATE = config.risk.usdKesRate ?? 129.0;
+const FIXED_BALANCE_USD = Number(config.backtest?.fixedBalanceUSD);
+const USE_FIXED_BALANCE = Number.isFinite(FIXED_BALANCE_USD) && FIXED_BALANCE_USD > 0;
+const INITIAL_BALANCE = USE_FIXED_BALANCE ? FIXED_BALANCE_USD : config.risk.accountCapitalKES / USD_KES_RATE;
+const INTRABAR_MODE = String(config.backtest?.intrabarMode ?? "conservative").toLowerCase();
+const TICK_CACHE_DIR = process.env.BACKTEST_TICK_CACHE_DIR || "data/ticks";
+const TICK_MISSING_MODE = String(process.env.BACKTEST_TICK_MISSING || "fallback").toLowerCase();
+const BACKTEST_TICK_SOURCE = process.env.BACKTEST_TICK_SOURCE || "sqlite"; // sqlite or files
+
+let TICK_DB = null;
+if (INTRABAR_MODE === "tick" && BACKTEST_TICK_SOURCE === "sqlite") {
+  try {
+    TICK_DB = new TickDatabase();
+  } catch (err) {
+    console.warn(`  ⚠️  Failed to initialize SQLite tick database: ${err.message}. Falling back to file cache.`);
+  }
+}
 
 let balance = INITIAL_BALANCE;
 const pairData = {};
@@ -25,6 +43,10 @@ async function main() {
   console.log(`  🤖  CUSTOM BACKTESTER (MULTI-PAIR)`);
   console.log(`  Pairs    : ${PAIRS.join(", ")}`);
   console.log(`  Strategy : ${strategyMode}`);
+  if (USE_FIXED_BALANCE) {
+    console.log(`  Sizing   : fixed balance $${FIXED_BALANCE_USD.toFixed(2)} (no compounding for position sizing)`);
+  }
+  console.log(`  Intrabar : ${INTRABAR_MODE}`);
   console.log(`${"═".repeat(60)}\n`);
 
   const allTimestamps = new Set();
@@ -58,6 +80,7 @@ async function main() {
 
     pairData[pair] = {
         candles,
+        ticks: loadTickData(pair),
         higherTimeframeCandles: htfConfig.enabled ? buildHourlyCandles(candles) : [],
         liquidityContext: buildLiquidityContext(candles),
         higherTimeframeIndex: 0,
@@ -130,7 +153,13 @@ async function main() {
       const askClose = midClose + spread/2;
       const slippage = SLIPPAGE_PIPS * p.pipSize;
 
+      const intervalEndMs = new Date(timestamp).getTime() + 5 * 60_000;
+      const intrabarTicks = INTRABAR_MODE === "tick" ? getTicksForInterval(p, new Date(timestamp).getTime(), intervalEndMs) : [];
+
       // Manage trades
+      if (intrabarTicks.length > 0) {
+        replayTicks(pair, p, intrabarTicks, slippage);
+      } else {
       p.activeTrades = p.activeTrades.filter(trade => {
         trade.ageBars = (trade.ageBars ?? 0) + 1;
         if (trade.direction === "BUY") {
@@ -189,6 +218,7 @@ async function main() {
         }
         return true;
       });
+      }
 
       // Session Hours (supports multi-window UTC, incl. half-hours)
       const activeWindow = getActiveSessionWindowUTC(dateObj);
@@ -199,7 +229,8 @@ async function main() {
         continue;
       }
 
-      processPendingOrders(pair, p, { timestamp, bidLow, askHigh, slippage });
+      if (intrabarTicks.length > 0) replayTicks(pair, p, intrabarTicks, slippage);
+      else processPendingOrders(pair, p, { timestamp, bidLow, askHigh, slippage });
       if (!canBacktestTrade(timestamp)) continue;
       if (!canLondonModuleTrade(timestamp)) continue;
       if (p.activeTrades.length >= config.maxTradesPerPair) continue;
@@ -229,8 +260,11 @@ async function main() {
 
       if (signal.signal === 'none' || p.activeTrades.length >= config.maxTradesPerPair || p.pendingOrders.length > 0) continue;
 
-      handleSignal(pair, signal, midOpen, timestamp, p.candleIndex, sessionKey);
-      processPendingOrders(pair, p, { timestamp, bidLow, askHigh, slippage });
+      const added = handleSignal(pair, signal, midOpen, timestamp, p.candleIndex, sessionKey);
+      if (added) {
+        if (intrabarTicks.length > 0) replayTicks(pair, p, intrabarTicks, slippage);
+        else processPendingOrders(pair, p, { timestamp, bidLow, askHigh, slippage });
+      }
     }
   }
 
@@ -281,13 +315,13 @@ async function main() {
   function handleSignal(pair, signal, price, time, setupIndex, sessionKey = null) {
     if (!canBacktestTrade(time)) {
       dailyRisk.blockedSignals += 1;
-      return;
+      return false;
     }
 
     const p = pairData[pair];
     const action = signal.signal.toUpperCase();
     const units = calculateBacktestUnits(pair, signal);
-    if (units <= 0) return;
+    if (units <= 0) return false;
 
     if (signal.signal === "sell_stop") {
       p.pendingOrders.push({
@@ -311,7 +345,7 @@ async function main() {
         rewardPips: signal.rewardPips,
         convictionMultiplier: signal.convictionMultiplier ?? 1.0,
       });
-      return;
+      return true;
     }
 
     if (signal.signal === "buy_stop") {
@@ -336,7 +370,7 @@ async function main() {
         rewardPips: signal.rewardPips,
         convictionMultiplier: signal.convictionMultiplier ?? 1.0,
       });
-      return;
+      return true;
     }
 
     p.activeTrades.push({
@@ -362,6 +396,75 @@ async function main() {
     if (sessionKey) {
       p.sessionTradeCounts.set(sessionKey, (p.sessionTradeCounts.get(sessionKey) ?? 0) + 1);
     }
+    return true;
+  }
+
+  function replayTicks(pair, p, ticks, slippage) {
+    for (const tick of ticks) {
+      processPendingOrdersAtTick(pair, p, tick, slippage);
+      p.activeTrades = p.activeTrades.filter(trade => {
+        const exit = getTickExit(trade, tick, slippage);
+        if (!exit) return true;
+        closeTrade(pair, trade, exit.price, exit.reason, tick.time);
+        return false;
+      });
+    }
+  }
+
+  function processPendingOrdersAtTick(pair, p, tick, slippage) {
+    p.pendingOrders = p.pendingOrders.filter(order => {
+      const ageBars = p.candleIndex - order.setupIndex;
+      if (ageBars > order.expiresAfterBars) return false;
+      if (p.activeTrades.length >= config.maxTradesPerPair) return true;
+      if (getTotalActiveTrades() >= (config.maxTotalTrades ?? Infinity)) return true;
+
+      const triggered = order.direction === "SELL"
+        ? tick.bid <= order.entry
+        : tick.ask >= order.entry;
+      if (!triggered) return true;
+      if (!canBacktestTrade(tick.time)) {
+        dailyRisk.blockedPendingTriggers += 1;
+        return false;
+      }
+
+      if (order.sessionKey) {
+        p.sessionTradeCounts.set(order.sessionKey, (p.sessionTradeCounts.get(order.sessionKey) ?? 0) + 1);
+      }
+
+      p.activeTrades.push({
+        direction: order.direction,
+        entry: order.direction === "SELL" ? order.entry - slippage : order.entry + slippage,
+        sl: order.sl,
+        tp: order.tp,
+        units: order.units,
+        time: tick.time,
+        setupTime: order.setupTime,
+        pair,
+        reason: order.reason,
+        strategy: order.strategy,
+        sessionKey: order.sessionKey,
+        levelName: order.levelName,
+        levelPrice: order.levelPrice,
+        ageBars: 0,
+        timeExitBars: order.timeExitBars,
+        forceExitUTC: order.forceExitUTC,
+        riskPips: order.riskPips,
+        rewardPips: order.rewardPips,
+        convictionMultiplier: order.convictionMultiplier ?? 1.0,
+      });
+      return false;
+    });
+  }
+
+  function getTickExit(trade, tick, slippage) {
+    if (trade.direction === "BUY") {
+      if (tick.bid <= trade.sl) return { reason: "SL", price: trade.sl - slippage };
+      if (Number.isFinite(trade.tp) && tick.bid >= trade.tp) return { reason: "TP", price: trade.tp - slippage };
+      return null;
+    }
+    if (tick.ask >= trade.sl) return { reason: "SL", price: trade.sl + slippage };
+    if (Number.isFinite(trade.tp) && tick.ask <= trade.tp) return { reason: "TP", price: trade.tp + slippage };
+    return null;
   }
 
   function resetLondonModuleRiskIfNeeded(dateLike) {
@@ -494,7 +597,8 @@ async function main() {
   }
 
   function calculateBacktestUnits(pair, signal) {
-    const capital = balance * USD_KES_RATE;
+    const sizingBalance = USE_FIXED_BALANCE ? FIXED_BALANCE_USD : balance;
+    const capital = sizingBalance * USD_KES_RATE;
     const base = calculateRiskVolume({
       pair,
       slPips: signal.riskPips,
@@ -660,6 +764,10 @@ async function main() {
         blockedSignals: dailyRisk.blockedSignals,
         blockedPendingTriggers: dailyRisk.blockedPendingTriggers,
       },
+      sizing: {
+        mode: USE_FIXED_BALANCE ? "fixed_balance" : "compounding",
+        fixedBalanceUSD: USE_FIXED_BALANCE ? FIXED_BALANCE_USD : null,
+      },
     },
     dailyRiskSimulation: {
       blockedDays,
@@ -717,7 +825,8 @@ async function main() {
 
   const ddRecoverIdx = drawdowns.findIndex((d, i) => i > maxDDEnd && d === 0);
   const ddPeakDate = ddRecoverIdx >= 0 ? new Date(sortedHistory[ddRecoverIdx].exitTime || sortedHistory[ddRecoverIdx].time).toISOString().slice(0, 10) : "never";
-  const ddTroughDate = new Date(sortedHistory[maxDDEnd].exitTime || sortedHistory[maxDDEnd].time).toISOString().slice(0, 10);
+  const ddTroughTrade = sortedHistory[maxDDEnd];
+  const ddTroughDate = ddTroughTrade ? new Date(ddTroughTrade.exitTime || ddTroughTrade.time).toISOString().slice(0, 10) : "n/a";
 
   console.log(`\n  📊 FINAL: $${balance.toFixed(2)} | Trades: ${allHistory.length} | Win Rate: ${finalStats.summary.winRate}%`);
   console.log(`  📉 Max DD: ${maxDD}% (peak → ${ddTroughDate}, recovered by ${ddPeakDate}, ${maxDDLength} trades) | Consecutive loss: ${longestLossStreak} | Consecutive win: ${longestWinStreak}`);
@@ -750,6 +859,106 @@ function summarizeTrades(trades) {
     avgWin: wins.length ? +(grossProfit / wins.length).toFixed(2) : 0,
     avgLoss: losses.length ? +(-grossLoss / losses.length).toFixed(2) : 0,
   };
+}
+
+function loadTickData(pair) {
+  if (INTRABAR_MODE !== "tick") return { mode: "disabled" };
+  const state = {
+    mode: "cache",
+    pair,
+    pairKey: pair.replace("/", "_"),
+    cacheDir: TICK_CACHE_DIR,
+    dailyCache: new Map(),
+    warnedDays: new Set(),
+    legacyTicks: [],
+  };
+
+  const file = `ticks_${pair.replace("/", "_")}.json`;
+  if (fs.existsSync(file)) {
+    const data = JSON.parse(fs.readFileSync(file, "utf8"));
+    const ticks = Array.isArray(data) ? data : data.ticks;
+    if (Array.isArray(ticks)) {
+      state.legacyTicks = normalizeTicks(ticks);
+    } else {
+      console.warn(`  ⚠️  ${file} has no ticks array; ignoring legacy tick file for ${pair}.`);
+    }
+  }
+
+  const pairDir = path.join(TICK_CACHE_DIR, state.pairKey);
+  if (!fs.existsSync(pairDir) && state.legacyTicks.length === 0) {
+    console.warn(`  ⚠️  BACKTEST_INTRABAR_MODE=tick but no tick cache found for ${pair} (${pairDir}); falling back to M5 candle sequencing.`);
+  }
+
+  return state;
+}
+
+function normalizeTicks(ticks) {
+  return ticks
+    .map(t => ({
+      time: t.time,
+      timestamp: Number(t.timestamp ?? new Date(t.time).getTime()),
+      bid: Number(t.bid),
+      ask: Number(t.ask),
+    }))
+    .filter(t => Number.isFinite(t.timestamp) && Number.isFinite(t.bid) && Number.isFinite(t.ask) && t.bid > 0 && t.ask > 0)
+    .sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function getTicksForInterval(pairState, startMs, endMs) {
+  if (pairState.ticks?.mode !== "cache") return [];
+
+  if (TICK_DB) {
+    const dbTicks = TICK_DB.getTicks(pairState.pair, startMs, endMs);
+    if (dbTicks.length > 0) return dbTicks;
+  }
+
+  const day = new Date(startMs).toISOString().slice(0, 10);
+  const daily = loadDailyTicks(pairState.ticks, day);
+  if (daily.ticks.length > 0 && isCovered(daily.coverage, startMs, endMs)) {
+    return daily.ticks.filter(t => t.timestamp >= startMs && t.timestamp < endMs);
+  }
+
+  if (pairState.ticks.legacyTicks.length > 0) {
+    const legacyTicks = pairState.ticks.legacyTicks.filter(t => t.timestamp >= startMs && t.timestamp < endMs);
+    if (legacyTicks.length > 0) return legacyTicks;
+  }
+
+  handleMissingTicks(pairState.ticks, day, startMs, endMs);
+  return [];
+}
+
+function loadDailyTicks(tickState, day) {
+  if (tickState.dailyCache.has(day)) return tickState.dailyCache.get(day);
+
+  const file = path.join(tickState.cacheDir, tickState.pairKey, `${day}.json.gz`);
+  if (!fs.existsSync(file)) {
+    const empty = { ticks: [], coverage: [] };
+    tickState.dailyCache.set(day, empty);
+    return empty;
+  }
+
+  const data = JSON.parse(zlib.gunzipSync(fs.readFileSync(file)).toString("utf8"));
+  const daily = {
+    ticks: normalizeTicks(data.ticks ?? []),
+    coverage: Array.isArray(data.coverage) ? data.coverage : [],
+  };
+  tickState.dailyCache.set(day, daily);
+  return daily;
+}
+
+function isCovered(coverage, startMs, endMs) {
+  return coverage.some(range => Number(range.from) <= startMs && Number(range.to) >= endMs);
+}
+
+function handleMissingTicks(tickState, day, startMs, endMs) {
+  const message = `BACKTEST_INTRABAR_MODE=tick missing ticks for ${tickState.pair} ${new Date(startMs).toISOString()} -> ${new Date(endMs).toISOString()}`;
+  if (TICK_MISSING_MODE === "strict") {
+    throw new Error(`${message}. Download ticks first or use BACKTEST_TICK_MISSING=fallback.`);
+  }
+  if (!tickState.warnedDays.has(day)) {
+    tickState.warnedDays.add(day);
+    console.warn(`  ⚠️  ${message}; falling back to M5 candle sequencing for missing intervals.`);
+  }
 }
 
 function getActiveSessionWindowUTC(dateObj) {

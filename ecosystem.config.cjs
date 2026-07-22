@@ -49,6 +49,8 @@ module.exports = {
         TRADING_PAIRS: 'XAU_USD',
         STRATEGY_MODE: 'ny_asian_continuation',
         SESSION_WINDOW_MODE: 'all_windows',
+        NY_ASIAN_ALLOWED_SESSIONS: 'london_open,ny_overlap',
+        NY_ASIAN_MAX_TRADES_PER_SESSION: '2',
         NY_ASIAN_MIN_BREAK_PIPS: '100',
         NY_ASIAN_ENTRY_BUFFER_PIPS: '10',
         NY_ASIAN_STOP_BUFFER_PIPS: '10',
