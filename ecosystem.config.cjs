@@ -61,7 +61,7 @@ module.exports = {
         NY_ASIAN_TRADE_START_UTC: '7',
         NY_ASIAN_TRADE_END_UTC: '16',
         NY_ASIAN_FORCE_EXIT_UTC: '16',
-        NY_ASIAN_PREFER_AFTER_UTC: '12.5',
+        NY_ASIAN_PREFER_AFTER_UTC: '7',
         MAX_SPREAD_PIPS: '100',
         MAX_SLIPPAGE_PIPS: '5',
         BACKTEST_SPREAD_PIPS: '40',

@@ -223,9 +223,6 @@ async function downloadPairDay(client, pair, dayStart, dayEnd, db = null) {
 
 async function main() {
   const client = new ICMarketsClient();
-  await client.connect();
-  await client.authenticate();
-
   const db = useSqlite ? new TickDatabase() : null;
 
   for (const pair of pairs) {

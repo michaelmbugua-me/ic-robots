@@ -222,10 +222,26 @@ GBP/USD is excluded from London entirely (`LONDON_FAKE_BREAK_ALLOWED_PAIRS=EUR_U
 
 ### Safety filters active at all times
 - H1 EMA200 trend alignment required (FX only; Gold has it disabled)
-- Max 1 trade per pair per session
+- Max 1 trade per pair per session (FX); Max 2 trades per session (Gold)
 - London module brake: stop after 1 loss per day
 - Daily KES stop-loss and profit-target gates
 - Spread and quote-freshness gates
+
+### Gold configuration validation (Jan-May 2026)
+
+Backtested against tick data from `data/ticks.sqlite`. Each month starts from $1,172.13 balance.
+
+| Month | NY only (1 trade/session) | | Both sessions (2 trades/session) | |
+|---|---|---|---|---|
+| | **Net** | **Win%** | **Net** | **Win%** |
+| Jan | +$52.45 | 50.0% | +$232.17 | 59.3% |
+| Feb | +$95.50 | 75.0% | +$154.36 | 64.7% |
+| Mar | +$46.36 | 50.0% | +$106.31 | 43.5% |
+| Apr | +$9.14 | 30.8% | +$142.81 | 45.2% |
+| May | +$63.13 | 50.0% | +$91.46 | 40.7% |
+| **TOTAL** | **+$266.58** | | **+$727.11** | |
+
+**Decision:** Both sessions + 2 trades/session produces 2.7x more profit with acceptable drawdown. Max drawdown increased from 2.76% to 3.4% in worst month (April), but remains within safe bounds.
 
 ---
 
