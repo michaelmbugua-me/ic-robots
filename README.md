@@ -640,9 +640,12 @@ Useful presets:
 ```bash
 npm run backtest:accurate -- --preset gold --from 2020-01-01 --to 2020-02-01
 npm run backtest:accurate -- --preset gold-fixed --from 2020-01-01 --to 2020-02-01 --fixed-balance 1191.99
-npm run backtest:accurate -- --preset ny --from 2020-01-01 --to 2020-02-01
+npm run backtest:accurate -- --preset fx --from 2026-07-01 --to 2026-08-01
+npm run backtest:accurate -- --preset fx-fixed --from 2026-07-01 --to 2026-08-01 --fixed-balance 1191.99
 npm run backtest:accurate -- --preset all --from 2020-01-01 --to 2020-02-01
 ```
+
+The `fx`/`fx-fixed` presets run `EUR_USD`, `GBP_USD`, `USD_JPY` with `STRATEGY_MODE=combined_ny_london` and the same `LONDON_*` settings as the live `ic-scalping-bot` PM2 process (`ecosystem.config.cjs`), so the backtest mirrors what's actually running live rather than a plain NY Asian continuation test. `ny` is kept as a backward-compatible alias for `fx`.
 
 ### Analyze and generate HTML report
 

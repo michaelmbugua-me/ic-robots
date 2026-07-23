@@ -176,8 +176,8 @@ export function generateNYAsianContinuationSignal(candles, opts = {}) {
     ? asianRange.high + entryBuffer
     : asianRange.low - entryBuffer;
   const sl = direction === 'BUY'
-    ? candle.low - stopBuffer
-    : candle.high + stopBuffer;
+    ? Math.min(candle.low, asianRange.high) - stopBuffer
+    : Math.max(candle.high, asianRange.low) + stopBuffer;
   const risk = direction === 'BUY' ? entry - sl : sl - entry;
   const riskPips = risk / pipSize;
   if (risk <= 0) return NO_SIGNAL(`Invalid ${direction} risk — stop is on the wrong side of entry`);
