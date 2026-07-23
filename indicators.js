@@ -147,10 +147,11 @@ export function generateNYAsianContinuationSignal(candles, opts = {}) {
   const maxRiskPips = opts.maxRiskPips ?? 12;
   const day = candleTime.toISOString().slice(0, 10);
 
+  const priorBreakScanStartUTC = Number.isFinite(preferAfterUTC) ? Math.max(tradeStartUTC, preferAfterUTC) : tradeStartUTC;
   const priorNyCandles = norm.slice(0, last).filter(c => {
     const d = new Date(c.time);
     const h = d.getUTCHours() + (d.getUTCMinutes() / 60);
-    return d.toISOString().slice(0, 10) === day && h >= tradeStartUTC && h < tradeEndUTC;
+    return d.toISOString().slice(0, 10) === day && h >= priorBreakScanStartUTC && h < tradeEndUTC;
   });
   if (opts.blockOnPriorBreak !== false && priorNyCandles.some(c => c.high >= asianRange.high + minBreak || c.low <= asianRange.low - minBreak)) {
     const brokeCandle = priorNyCandles.find(c => c.high >= asianRange.high + minBreak || c.low <= asianRange.low - minBreak);
