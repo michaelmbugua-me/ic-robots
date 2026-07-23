@@ -24,6 +24,27 @@ function envList(name, fallback) {
   return raw.split(",").map(v => v.trim()).filter(Boolean);
 }
 
+function pairEnvNumber(pair, suffix, fallback) {
+  return envNumber(`NY_ASIAN_${pair}_${suffix}`, fallback);
+}
+
+function buildPairOverrides(pairs) {
+  const overrides = {};
+  for (const pair of pairs) {
+    const o = {};
+    const rr = pairEnvNumber(pair, "RR_RATIO", null);
+    const minBreak = pairEnvNumber(pair, "MIN_BREAK_PIPS", null);
+    const minRisk = pairEnvNumber(pair, "MIN_RISK_PIPS", null);
+    const maxRisk = pairEnvNumber(pair, "MAX_RISK_PIPS", null);
+    if (rr !== null) o.rrRatio = rr;
+    if (minBreak !== null) o.minBreakPips = minBreak;
+    if (minRisk !== null) o.minRiskPips = minRisk;
+    if (maxRisk !== null) o.maxRiskPips = maxRisk;
+    if (Object.keys(o).length > 0) overrides[pair] = o;
+  }
+  return overrides;
+}
+
 const sessionWindowPresetsUTC = {
   ny_only: [
     { name: "ny_overlap", start: 12.5, end: 16.0 },
@@ -188,7 +209,7 @@ export const config = {
       minBreakPips: envNumber("NY_ASIAN_MIN_BREAK_PIPS", 3.0),
       minRiskPips: envNumber("NY_ASIAN_MIN_RISK_PIPS", 5),
       maxRiskPips: envNumber("NY_ASIAN_MAX_RISK_PIPS", 15),
-      rrRatio: envNumber("NY_ASIAN_RR_RATIO", 1.5),
+      rrRatio: envNumber("NY_ASIAN_RR_RATIO", 2.0),
       pendingExpiryBars: envNumber("NY_ASIAN_PENDING_EXPIRY_BARS", 3),
       timeExitBars: envNumber("NY_ASIAN_TIME_EXIT_BARS", 12),
       maxTradesPerSession: envNumber("NY_ASIAN_MAX_TRADES_PER_SESSION", 1),
@@ -197,6 +218,7 @@ export const config = {
       partialTpFraction: envNumber("NY_ASIAN_PARTIAL_TP_FRACTION", 0.5),
       partialTpTriggerRr: envNumber("NY_ASIAN_PARTIAL_TP_TRIGGER_RR", 1.0),
       partialTpMoveSlToEntry: envBool("NY_ASIAN_PARTIAL_TP_MOVE_SL_TO_ENTRY", true),
+      pairOverrides: buildPairOverrides(envList("TRADING_PAIRS", ["EUR_USD", "GBP_USD", "USD_JPY"])),
     },
     londonAsianFakeBreakReversal: {
       enabled: true,

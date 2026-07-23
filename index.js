@@ -387,20 +387,21 @@ function generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, 
   const htfTrend = htfConfig.enabled ? higherTimeframe.trend : null;
 
   const cfg = config.strategy.nyAsianContinuation ?? {};
-  if (Array.isArray(cfg.allowedSessionNames) && cfg.allowedSessionNames.length > 0 && !cfg.allowedSessionNames.includes(activeWindow?.name)) {
+  const pairCfg = { ...cfg, ...(cfg.pairOverrides?.[pair] ?? {}) };
+  if (Array.isArray(pairCfg.allowedSessionNames) && pairCfg.allowedSessionNames.length > 0 && !pairCfg.allowedSessionNames.includes(activeWindow?.name)) {
     return noSignal(`NY Asian continuation blocked outside allowed session (${activeWindow?.name ?? "none"})`, "ny_asian_continuation");
   }
 
   const sessionKey = getSessionKey(new Date(), activeWindow);
-  if ((state.sessionTradeCounts.get(sessionKey) ?? 0) >= (cfg.maxTradesPerSession ?? 1)) {
+  if ((state.sessionTradeCounts.get(sessionKey) ?? 0) >= (pairCfg.maxTradesPerSession ?? 1)) {
     return noSignal(`NY Asian continuation max trades reached for ${sessionKey}`, "ny_asian_continuation");
   }
 
-  const asianRange = getAsianRangeFromCandles(state.candleCache, new Date(), cfg);
+  const asianRange = getAsianRangeFromCandles(state.candleCache, new Date(), pairCfg);
   if (!asianRange) {
     const day = new Date().toISOString().slice(0, 10);
-    const asianStart = cfg.asianStartUTC ?? 0;
-    const asianEnd = cfg.asianEndUTC ?? 7;
+    const asianStart = pairCfg.asianStartUTC ?? 0;
+    const asianEnd = pairCfg.asianEndUTC ?? 7;
     const asianCandles = state.candleCache.filter(c => {
       if (c.time.slice(0, 10) !== day) return false;
       const d = new Date(c.time);
@@ -415,7 +416,7 @@ function generateNYAsianContinuationSignalForPair(pair, state, higherTimeframe, 
   }
 
   const signal = generateNYAsianContinuationSignal(state.candleCache, {
-    ...cfg,
+    ...pairCfg,
     asianRange,
     higherTimeframeTrend: htfTrend,
     pair,

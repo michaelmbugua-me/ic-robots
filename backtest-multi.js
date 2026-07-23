@@ -272,8 +272,9 @@ async function main() {
     const htfTrend = htfConfig.enabled ? higherTimeframe.trend : null;
 
     if (strategyMode === "ny_asian_continuation") {
+      const nyCfg = { ...config.strategy.nyAsianContinuation, ...(config.strategy.nyAsianContinuation.pairOverrides?.[instrument] ?? {}) };
       return generateNYAsianContinuationSignal(currentM5Candles, {
-        ...config.strategy.nyAsianContinuation,
+        ...nyCfg,
         asianRange,
         higherTimeframeTrend: htfTrend,
         pair: instrument,
@@ -290,8 +291,9 @@ async function main() {
     }
 
     if (strategyMode === "combined_ny_london") {
+      const nyCfg = { ...config.strategy.nyAsianContinuation, ...(config.strategy.nyAsianContinuation.pairOverrides?.[instrument] ?? {}) };
       const nySignal = generateNYAsianContinuationSignal(currentM5Candles, {
-        ...config.strategy.nyAsianContinuation,
+        ...nyCfg,
         asianRange,
         higherTimeframeTrend: htfTrend,
         pair: instrument,
