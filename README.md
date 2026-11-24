@@ -103,16 +103,19 @@ STRATEGY_MODE=combined_ny_london
 
 `combined_ny_london` runs both live routers in the same process so account reconciliation, risk gates, trade slots, and local state stay shared. London remains monitor-only unless `LONDON_LIVE_EXECUTION_ENABLED=true` is explicitly set.
 
+**Live FX process:** `ecosystem.config.cjs` now runs `ic-scalping-bot` with `STRATEGY_MODE=ny_asian_continuation`, so only the NY strategy runs. The London module is disabled there (`LONDON_MONITOR_ENABLED=false`, `LONDON_LIVE_EXECUTION_ENABLED=false`) because it underperformed in backtests. The London code and settings remain available for research.
+
 ### Quick reference: Pip requirements
 
 | Pair type | Stop Loss (pips) | Take Profit (pips) | R:R Ratio |
 |---|---|---|---|
-| **FX** (EUR/USD, GBP/USD, USD/JPY) | 5–15 pips | 7.5–22.5 pips | 1:1.5 |
+| **FX** (EUR/USD, GBP/USD, USD/JPY) | 5–15 pips | 10–30 pips | 1:2.0 |
 | **Gold** (XAU/USD) | 200–2,000 pips | 600–6,000 pips | 1:3.0 |
 
-**Most common FX setups:**
-- 5 pip SL → 7.5 pip TP (333 backtested trades)
-- 10 pip SL → 15 pip TP (247 trades)
+**Example FX setups (R:R 1:2.0):**
+- 5 pip SL → 10 pip TP
+- 10 pip SL → 20 pip TP
+- 15 pip SL → 30 pip TP
 
 **Gold note:** 1 pip = $0.01, so 400 pips = $4.00 SL and 1,200 pips = $12.00 TP
 
@@ -125,6 +128,8 @@ STRATEGY_MODE=combined_ny_london
    - The current preferred-time filter waits until `13:00 UTC` by default.
 3. Require the first clean NY break of the Asian high or low.
    - Default minimum break: `3.0` pips.
+   - If an earlier candle on the same day already broke the Asian range by the minimum break, the setup is skipped (`NY_ASIAN_BLOCK_ON_PRIOR_BREAK`, default `true`).
+   - The prior-break scan starts at the later of the trade window start and the preferred-time filter (`NY_ASIAN_PREFER_AFTER_UTC`), so breaks before the preferred time no longer block a setup.
 4. Optionally require H1 alignment.
    - Default: enabled.
    - BUY requires H1 `bull`; SELL requires H1 `bear`.
@@ -137,10 +142,10 @@ STRATEGY_MODE=combined_ny_london
    - `sell_stop` below Asian low.
 7. Validate stop distance.
    - Default min risk: `5` pips.
-   - Default max risk: `12` pips in `config.js`.
-   - PM2 overrides this to `10` pips in `ecosystem.config.cjs`.
+   - Default max risk: `15` pips in `config.js`.
+   - PM2 sets the same `15` pips for the FX process in `ecosystem.config.cjs`.
 8. Set reward using `NY_ASIAN_RR_RATIO`.
-   - Default: `1.2R`.
+   - Default: `2.0R`.
 9. Expire pending entries after `NY_ASIAN_PENDING_EXPIRY_BARS` M5 bars.
    - Default: `3` bars.
 10. Close active trades by:
@@ -154,13 +159,13 @@ SL and TP are not fixed — they adapt to the width of the Asian range (the brea
 
 | | FX (EUR/USD, GBP/USD, USD/JPY) | Gold (XAU/USD) |
 |---|---|---|
-| **Stop Loss** | 5–15 pips (avg 8) | 200–2,000 pips (avg 401) |
-| **Take Profit** | 7.5–22.5 pips (avg 12) | 600–6,000 pips (avg 1,203) |
-| **R:R ratio** | 1 : 1.5 (fixed) | 1 : 3.0 (fixed) |
+| **Stop Loss** | 5–15 pips | 200–2,000 pips (avg 401) |
+| **Take Profit** | 10–30 pips | 600–6,000 pips (avg 1,203) |
+| **R:R ratio** | 1 : 2.0 (fixed) | 1 : 3.0 (fixed) |
 
 For gold, 1 pip = $0.01, so 400 pips = $4.00 SL and 1,200 pips = $12.00 TP.
 
-Most common FX setups: 5 pip SL / 7.5 pip TP (333 backtested trades), 10 pip SL / 15 pip TP (247 trades).
+Per-pair overrides for R:R, minimum break and min/max risk are supported (see [Per-pair overrides](#per-pair-overrides)).
 
 How SL/TP are determined:
 
@@ -196,20 +201,14 @@ Important distinction:
 
 ### FX Process (`ic-scalping-bot`) — EUR/USD, GBP/USD, USD/JPY
 
-**Strategies:**
-- **NY Asian Continuation** — allowed session: `ny_overlap` only → 12:30–16:00 UTC window, signals from 13:00–15:30 UTC (prefer-after filter)
-- **London Fake-Break Reversal** — allowed session: `london_open` → 7:00–9:00 UTC window, pairs: EUR/USD + USD/JPY only
+**Strategy:** NY Asian Continuation only (`STRATEGY_MODE=ny_asian_continuation`), allowed session: `ny_overlap` → 12:30–16:00 UTC window, signals from 13:00–15:30 UTC (prefer-after filter). R:R `2.0`, risk `5–15` pips, H1 alignment required.
 
-| Day | London (07:00–09:00 UTC) | NY Overlap (13:00–15:30 UTC) |
-|---|---|---|
-| **Mon** | blocked (weekday) | NY continuation — all pairs |
-| **Tue** | London fake-break — EUR/USD, USD/JPY | NY continuation — all pairs |
-| **Wed** | London fake-break — EUR/USD, USD/JPY | NY continuation — all pairs |
-| **Thu** | London fake-break — USD/JPY only (EUR/USD excluded) | NY continuation — all pairs |
-| **Fri** | blocked (weekday) | NY continuation — all pairs |
-| **Sat/Sun** | closed | closed |
+The London Fake-Break Reversal module is disabled in this process.
 
-GBP/USD is excluded from London entirely (`LONDON_FAKE_BREAK_ALLOWED_PAIRS=EUR_USD,USD_JPY`).
+| Day | NY Overlap (13:00–15:30 UTC) |
+|---|---|
+| **Mon–Fri** | NY continuation — all pairs |
+| **Sat/Sun** | closed |
 
 ### Gold Process (`ic-scalping-gold`) — XAU/USD
 
@@ -223,7 +222,6 @@ GBP/USD is excluded from London entirely (`LONDON_FAKE_BREAK_ALLOWED_PAIRS=EUR_U
 ### Safety filters active at all times
 - H1 EMA200 trend alignment required (FX only; Gold has it disabled)
 - Max 1 trade per pair per session (FX); Max 2 trades per session (Gold)
-- London module brake: stop after 1 loss per day
 - Daily KES stop-loss and profit-target gates
 - Spread and quote-freshness gates
 
@@ -645,7 +643,7 @@ npm run backtest:accurate -- --preset fx-fixed --from 2026-07-01 --to 2026-08-01
 npm run backtest:accurate -- --preset all --from 2020-01-01 --to 2020-02-01
 ```
 
-The `fx`/`fx-fixed` presets run `EUR_USD`, `GBP_USD`, `USD_JPY` with `STRATEGY_MODE=combined_ny_london` and the same `LONDON_*` settings as the live `ic-scalping-bot` PM2 process (`ecosystem.config.cjs`), so the backtest mirrors what's actually running live rather than a plain NY Asian continuation test. `ny` is kept as a backward-compatible alias for `fx`.
+The `fx`/`fx-fixed` presets run `EUR_USD`, `GBP_USD`, `USD_JPY` with `STRATEGY_MODE=combined_ny_london` and London live execution enabled (see `FX_ENV` in `accurate-backtest.js`). **This no longer mirrors the live `ic-scalping-bot` PM2 process**, which now runs NY Asian continuation only with `NY_ASIAN_RR_RATIO=2.0` and `NY_ASIAN_MAX_RISK_PIPS=15`. To backtest the live FX setup, set those variables and `STRATEGY_MODE=ny_asian_continuation` yourself. `ny` is kept as a backward-compatible alias for `fx`.
 
 ### Analyze and generate HTML report
 
@@ -788,7 +786,7 @@ It also writes `analysis/selected_combined_profile.json` with combined trade-lev
 
 ## PM2 operation
 
-`ecosystem.config.cjs` runs one forked process named `ic-scalping-bot` with `--auto-execute` and production-oriented strategy/risk environment overrides.
+`ecosystem.config.cjs` runs two forked processes with `--auto-execute` and production-oriented strategy/risk environment overrides: `ic-scalping-bot` (FX, NY Asian continuation only) and `ic-scalping-gold` (XAU/USD).
 
 Start:
 
@@ -879,15 +877,16 @@ Most values are configured in `config.js`; many can be overridden with environme
 | `NY_ASIAN_STOP_BUFFER_PIPS` | `0.5` | Stop loss buffer. |
 | `NY_ASIAN_MIN_BREAK_PIPS` | `3.0` | Minimum clean break beyond Asian range. |
 | `NY_ASIAN_MIN_RISK_PIPS` | `5` | Minimum stop distance (pips). |
-| `NY_ASIAN_MAX_RISK_PIPS` | `12` | Maximum stop distance (pips). |
-| `NY_ASIAN_RR_RATIO` | `1.2` | Reward/risk ratio (TP = SL × 1.2). |
+| `NY_ASIAN_MAX_RISK_PIPS` | `15` | Maximum stop distance (pips). |
+| `NY_ASIAN_RR_RATIO` | `2.0` | Reward/risk ratio (TP = SL × 2.0). |
 | `NY_ASIAN_PENDING_EXPIRY_BARS` | `3` | Pending stop expiry in M5 bars. |
 | `NY_ASIAN_TIME_EXIT_BARS` | `12` | Trade time exit in bars. |
 | `NY_ASIAN_MAX_TRADES_PER_SESSION` | `1` | Per-pair/per-session setup count. |
 | `NY_ASIAN_LOOKBACK_CANDLES` | `220` | M5 lookback for live strategy context. |
+| `NY_ASIAN_BLOCK_ON_PRIOR_BREAK` | `true` | Skip a setup if the Asian range was already broken earlier the same day (scan starts at the later of the trade start and `NY_ASIAN_PREFER_AFTER_UTC`). |
 | `LONDON_FAKE_BREAK_ALLOWED_SESSIONS` | `london_open` | Session names allowed by London fake-break backtests. |
 | `LONDON_FAKE_BREAK_ALLOWED_PAIRS` | empty | Optional London pair filter; `npm run auto` sets `EUR_USD,USD_JPY`. |
-| `LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS` | `Tue,Wed,Thu` | Candidate B weekday filter. |
+| `LONDON_FAKE_BREAK_ALLOWED_WEEKDAYS` | `Wed` | Candidate B weekday filter. |
 | `LONDON_FAKE_BREAK_EXCLUDED_PAIR_WEEKDAYS` | empty | Optional `PAIR:Day` exclusions, e.g. `EUR_USD:Thu`. |
 | `LONDON_FAKE_BREAK_TRADE_START_UTC` | `7.0` | London fake-break trade window start. |
 | `LONDON_FAKE_BREAK_TRADE_END_UTC` | `10.0` | London fake-break trade window end. |
@@ -900,6 +899,15 @@ Most values are configured in `config.js`; many can be overridden with environme
 | `LONDON_MAX_LOSSES_PER_DAY` | `0` | London module brake; `1` stops London after the first same-day London loss. |
 | `LONDON_MAX_DAILY_LOSS_USD` | `0` | Optional London module daily USD loss brake; `0` disables. |
 | `COOLDOWN_CANDLES_AFTER_LOSS` | `1` | Per-pair cooldown after SL. |
+
+### Per-pair overrides
+
+Override the NY Asian baseline for a single pair with `NY_ASIAN_{PAIR}_{PARAM}`. Supported params: `RR_RATIO`, `MIN_BREAK_PIPS`, `MIN_RISK_PIPS`, `MAX_RISK_PIPS`. Only pairs listed in `TRADING_PAIRS` are read. Overrides apply in both live (`index.js`) and backtests (`backtest-multi.js`).
+
+```bash
+NY_ASIAN_EUR_USD_RR_RATIO=2.5
+NY_ASIAN_GBP_USD_MIN_BREAK_PIPS=4
+```
 
 ### Execution and API throttling
 
@@ -936,8 +944,8 @@ Gold uses different pip values than FX pairs. These are set via environment vari
 | `NY_ASIAN_ENTRY_BUFFER_PIPS` | `10` | `0.5` | Entry buffer pips |
 | `NY_ASIAN_STOP_BUFFER_PIPS` | `10` | `0.5` | Stop loss buffer pips |
 | `NY_ASIAN_MIN_RISK_PIPS` | `200` | `5` | Minimum stop distance |
-| `NY_ASIAN_MAX_RISK_PIPS` | `2000` | `12` | Maximum stop distance |
-| `NY_ASIAN_RR_RATIO` | `3.0` | `1.2` | Reward/risk ratio |
+| `NY_ASIAN_MAX_RISK_PIPS` | `2000` | `15` | Maximum stop distance |
+| `NY_ASIAN_RR_RATIO` | `3.0` | `2.0` | Reward/risk ratio |
 | `BACKTEST_SPREAD_PIPS` | `40` | `0.7` | Simulated spread |
 | `BACKTEST_SLIPPAGE_PIPS` | `5` | `0.3` | Simulated slippage |
 
